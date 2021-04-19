@@ -20,17 +20,12 @@ limitations under the License.
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "tensorflow/lite/builtin_ops.h"
+#include "tensorflow/lite/core/shims/cc/kernels/register.h"
+#include "tensorflow/lite/core/shims/cc/tools/verifier.h"
 #include "tensorflow/lite/stderr_reporter.h"
-#include "tensorflow/lite/tools/verifier.h"
 #include "tensorflow_lite_support/cc/common.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
 #include "tensorflow_lite_support/cc/task/core/external_file_handler.h"
-
-#if TFLITE_USE_C_API
-#include "tensorflow/lite/c/c_api_experimental.h"
-#else
-#include "tensorflow/lite/kernels/register.h"
-#endif
 
 namespace tflite {
 namespace task {
@@ -52,69 +47,18 @@ static std::ios_base::Init s_iostream_initializer;
 #endif
 
 using ::absl::StatusCode;
+using ::tflite::proto::ComputeSettings;
 using ::tflite::support::CreateStatusWithPayload;
+using ::tflite::support::InterpreterCreationResources;
 using ::tflite::support::TfLiteSupportStatus;
-
-#if TFLITE_USE_C_API
-absl::Status TfLiteEngine::InterpreterWrapper::InitializeWithFallback(
-    std::function<
-        absl::Status(std::unique_ptr<Interpreter, InterpreterDeleter>*)>
-        interpreter_initializer,
-    const tflite::proto::ComputeSettings& compute_settings) {
-  if (compute_settings.has_preference() ||
-      compute_settings.has_tflite_settings()) {
-    // TODO(fergus): support acceleration.
-    return absl::UnimplementedError(
-        "Acceleration via ComputeSettings is not supported yet.");
-  }
-  absl::Status result = interpreter_initializer(&impl_);
-  if (!result.ok()) {
-    return result;
-  }
-  return (TfLiteInterpreterAllocateTensors(impl_.get()) != kTfLiteOk)
-             ? absl::InternalError(
-                   "TFLite interpreter: AllocateTensors() failed.")
-             : absl::OkStatus();
-}
-
-absl::Status TfLiteEngine::InterpreterWrapper::InvokeWithoutFallback() {
-  TfLiteStatus result = TfLiteInterpreterInvoke(impl_.get());
-  if (result != kTfLiteOk) {
-    return absl::Status(absl::StatusCode::kAborted,
-                        "TfLiteInterpreterInvoke failed");
-  }
-  return absl::OkStatus();
-}
-
-absl::Status TfLiteEngine::InterpreterWrapper::InvokeWithFallback(
-    const std::function<absl::Status(Interpreter* interpreter)>& set_inputs) {
-  // TODO(fergus): implement fallback.
-  absl::Status result = set_inputs(impl_.get());
-  if (!result.ok()) {
-    return result;
-  }
-  return InvokeWithoutFallback();
-}
-#endif  // TFLITE_USE_C_API
-
-int TfLiteEngine::ErrorReporter::Report(const char* format, va_list args) {
-  return std::vsnprintf(error_message, sizeof(error_message), format, args);
-}
 
 bool TfLiteEngine::Verifier::Verify(const char* data, int length,
                                     tflite::ErrorReporter* reporter) {
-  return tflite::Verify(data, length, *op_resolver_, reporter);
+  return tflite_shims::Verify(data, length, reporter);
 }
 
-#if TFLITE_USE_C_API
 TfLiteEngine::TfLiteEngine(std::unique_ptr<tflite::OpResolver> resolver)
-    : model_(nullptr, TfLiteModelDelete),
-      resolver_(std::move(resolver)),
-      verifier_(resolver_.get()) {}
-#else
-TfLiteEngine::TfLiteEngine(std::unique_ptr<tflite::OpResolver> resolver)
-    : model_(), resolver_(std::move(resolver)), verifier_(resolver_.get()) {}
-#endif
+    : model_(), resolver_(std::move(resolver)), verifier_() {}
 
 std::vector<TfLiteTensor*> TfLiteEngine::GetInputs() {
   Interpreter* interpreter = this->interpreter();
@@ -138,46 +82,32 @@ std::vector<const TfLiteTensor*> TfLiteEngine::GetOutputs() {
   return tensors;
 }
 
-// The following function is adapted from the code in
-// tflite::FlatBufferModel::VerifyAndBuildFromBuffer.
-void TfLiteEngine::VerifyAndBuildModelFromBuffer(const char* buffer_data,
-                                                 size_t buffer_size) {
-#if TFLITE_USE_C_API
-  // First verify with the base flatbuffers verifier.
-  // This verifies that the model is a valid flatbuffer model.
-  flatbuffers::Verifier base_verifier(
-      reinterpret_cast<const uint8_t*>(buffer_data), buffer_size);
-  if (!VerifyModelBuffer(base_verifier)) {
-    TF_LITE_REPORT_ERROR(&error_reporter_,
-                         "The model is not a valid Flatbuffer buffer");
-    model_ = nullptr;
-    return;
-  }
-  // Next verify with the extra verifier.  This verifies that the model only
-  // uses operators supported by the OpResolver.
-  if (!verifier_.Verify(buffer_data, buffer_size, &error_reporter_)) {
-    model_ = nullptr;
-    return;
-  }
-  // Build the model.
-  model_.reset(TfLiteModelCreate(buffer_data, buffer_size));
-#else
-  model_ = tflite::FlatBufferModel::VerifyAndBuildFromBuffer(
-      buffer_data, buffer_size, &verifier_, &error_reporter_);
-#endif
+void TfLiteEngine::VerifyAndBuildModelFromBuffer(
+    const char* buffer_data, size_t buffer_size,
+    TfLiteVerifier* extra_verifier) {
+  model_ = tflite_shims::FlatBufferModel::VerifyAndBuildFromBuffer(
+      buffer_data, buffer_size, extra_verifier, &error_reporter_);
 }
 
-absl::Status TfLiteEngine::InitializeFromModelFileHandler() {
+absl::Status TfLiteEngine::InitializeFromModelFileHandler(
+    const tflite::proto::ComputeSettings& compute_settings) {
   const char* buffer_data = model_file_handler_->GetFileContent().data();
   size_t buffer_size = model_file_handler_->GetFileContent().size();
-  VerifyAndBuildModelFromBuffer(buffer_data, buffer_size);
+  VerifyAndBuildModelFromBuffer(buffer_data, buffer_size, &verifier_);
   if (model_ == nullptr) {
+    static constexpr char kInvalidFlatbufferMessage[] =
+        "The model is not a valid Flatbuffer";
     // To be replaced with a proper switch-case when TF Lite model builder
     // returns a `TfLiteStatus` code capturing this type of error.
-    if (absl::StrContains(error_reporter_.error_message,
-                          "The model is not a valid Flatbuffer")) {
+    if (absl::StrContains(error_reporter_.message(),
+                          kInvalidFlatbufferMessage)) {
       return CreateStatusWithPayload(
-          StatusCode::kInvalidArgument, error_reporter_.error_message,
+          StatusCode::kInvalidArgument, error_reporter_.message(),
+          TfLiteSupportStatus::kInvalidFlatBufferError);
+    } else if (absl::StrContains(error_reporter_.message(),
+                                 "Error loading model from buffer")) {
+      return CreateStatusWithPayload(
+          StatusCode::kInvalidArgument, kInvalidFlatbufferMessage,
           TfLiteSupportStatus::kInvalidFlatBufferError);
     } else {
       // TODO(b/154917059): augment status with another `TfLiteStatus` code when
@@ -187,7 +117,7 @@ absl::Status TfLiteEngine::InitializeFromModelFileHandler() {
           StatusCode::kUnknown,
           absl::StrCat(
               "Could not build model from the provided pre-loaded flatbuffer: ",
-              error_reporter_.error_message));
+              error_reporter_.message()));
     }
   }
 
@@ -199,8 +129,9 @@ absl::Status TfLiteEngine::InitializeFromModelFileHandler() {
   return absl::OkStatus();
 }
 
-absl::Status TfLiteEngine::BuildModelFromFlatBuffer(const char* buffer_data,
-                                                    size_t buffer_size) {
+absl::Status TfLiteEngine::BuildModelFromFlatBuffer(
+    const char* buffer_data, size_t buffer_size,
+    const tflite::proto::ComputeSettings& compute_settings) {
   if (model_) {
     return CreateStatusWithPayload(StatusCode::kInternal,
                                    "Model already built");
@@ -209,10 +140,12 @@ absl::Status TfLiteEngine::BuildModelFromFlatBuffer(const char* buffer_data,
   ASSIGN_OR_RETURN(
       model_file_handler_,
       ExternalFileHandler::CreateFromExternalFile(&external_file_));
-  return InitializeFromModelFileHandler();
+  return InitializeFromModelFileHandler(compute_settings);
 }
 
-absl::Status TfLiteEngine::BuildModelFromFile(const std::string& file_name) {
+absl::Status TfLiteEngine::BuildModelFromFile(
+    const std::string& file_name,
+    const tflite::proto::ComputeSettings& compute_settings) {
   if (model_) {
     return CreateStatusWithPayload(StatusCode::kInternal,
                                    "Model already built");
@@ -221,10 +154,12 @@ absl::Status TfLiteEngine::BuildModelFromFile(const std::string& file_name) {
   ASSIGN_OR_RETURN(
       model_file_handler_,
       ExternalFileHandler::CreateFromExternalFile(&external_file_));
-  return InitializeFromModelFileHandler();
+  return InitializeFromModelFileHandler(compute_settings);
 }
 
-absl::Status TfLiteEngine::BuildModelFromFileDescriptor(int file_descriptor) {
+absl::Status TfLiteEngine::BuildModelFromFileDescriptor(
+    int file_descriptor,
+    const tflite::proto::ComputeSettings& compute_settings) {
   if (model_) {
     return CreateStatusWithPayload(StatusCode::kInternal,
                                    "Model already built");
@@ -233,43 +168,45 @@ absl::Status TfLiteEngine::BuildModelFromFileDescriptor(int file_descriptor) {
   ASSIGN_OR_RETURN(
       model_file_handler_,
       ExternalFileHandler::CreateFromExternalFile(&external_file_));
-  return InitializeFromModelFileHandler();
+  return InitializeFromModelFileHandler(compute_settings);
 }
 
 absl::Status TfLiteEngine::BuildModelFromExternalFileProto(
-    const ExternalFile* external_file) {
+    const ExternalFile* external_file,
+    const tflite::proto::ComputeSettings& compute_settings) {
   if (model_) {
     return CreateStatusWithPayload(StatusCode::kInternal,
                                    "Model already built");
   }
   ASSIGN_OR_RETURN(model_file_handler_,
                    ExternalFileHandler::CreateFromExternalFile(external_file));
-  return InitializeFromModelFileHandler();
+  return InitializeFromModelFileHandler(compute_settings);
 }
 
 absl::Status TfLiteEngine::InitInterpreter(int num_threads) {
   tflite::proto::ComputeSettings compute_settings;
-  return InitInterpreter(compute_settings, num_threads);
+  compute_settings.mutable_tflite_settings()
+      ->mutable_cpu_settings()
+      ->set_num_threads(num_threads);
+  return InitInterpreter(compute_settings);
 }
 
-#if TFLITE_USE_C_API
-const TfLiteRegistration* FindBuiltinOp(void* user_data,
-                                        TfLiteBuiltinOperator builtin_op,
-                                        int version) {
-  OpResolver* op_resolver = reinterpret_cast<OpResolver*>(user_data);
-  tflite::BuiltinOperator op = static_cast<tflite::BuiltinOperator>(builtin_op);
-  return op_resolver->FindOp(op, version);
-}
-
-const TfLiteRegistration* FindCustomOp(void* user_data, const char* custom_op,
-                                       int version) {
-  OpResolver* op_resolver = reinterpret_cast<OpResolver*>(user_data);
-  return op_resolver->FindOp(custom_op, version);
-}
-#endif
-
+// TODO(b/183798104): deprecate num_threads in VK task protos.
+// Deprecated. Use the following method, and configure `num_threads` through
+// `compute_settings`, i.e. in `CPUSettings`:
+// absl::Status TfLiteEngine::InitInterpreter(
+//    const tflite::proto::ComputeSettings& compute_settings)
 absl::Status TfLiteEngine::InitInterpreter(
     const tflite::proto::ComputeSettings& compute_settings, int num_threads) {
+  ComputeSettings settings_copy = ComputeSettings(compute_settings);
+  settings_copy.mutable_tflite_settings()
+      ->mutable_cpu_settings()
+      ->set_num_threads(num_threads);
+  return InitInterpreter(settings_copy);
+}
+
+absl::Status TfLiteEngine::InitInterpreter(
+    const tflite::proto::ComputeSettings& compute_settings) {
   if (model_ == nullptr) {
     return CreateStatusWithPayload(
         StatusCode::kInternal,
@@ -277,48 +214,42 @@ absl::Status TfLiteEngine::InitInterpreter(
         "BuildModelFrom methods before calling InitInterpreter.");
   }
   auto initializer =
-      [this, num_threads](
+      [this](
+          const InterpreterCreationResources& resources,
           std::unique_ptr<Interpreter, InterpreterDeleter>* interpreter_out)
       -> absl::Status {
-#if TFLITE_USE_C_API
-    std::unique_ptr<TfLiteInterpreterOptions,
-                    void (*)(TfLiteInterpreterOptions*)>
-        options{TfLiteInterpreterOptionsCreate(),
-                TfLiteInterpreterOptionsDelete};
-    TfLiteInterpreterOptionsSetOpResolver(options.get(), FindBuiltinOp,
-                                          FindCustomOp, resolver_.get());
-    TfLiteInterpreterOptionsSetNumThreads(options.get(), num_threads);
-    interpreter_out->reset(
-        TfLiteInterpreterCreateWithSelectedOps(model_.get(), options.get()));
-    if (*interpreter_out == nullptr) {
-      return CreateStatusWithPayload(
-          StatusCode::kAborted,
-          absl::StrCat("Could not build the TF Lite interpreter: "
-                       "TfLiteInterpreterCreateWithSelectedOps failed: ",
-                       error_reporter_.error_message));
-    }
-#else
-    if (tflite::InterpreterBuilder(*model_, *resolver_)(
-            interpreter_out, num_threads) != kTfLiteOk) {
+    tflite_shims::InterpreterBuilder interpreter_builder(*model_, *resolver_);
+    resources.ApplyTo(&interpreter_builder);
+    if (interpreter_builder(interpreter_out) != kTfLiteOk) {
       return CreateStatusWithPayload(
           StatusCode::kUnknown,
           absl::StrCat("Could not build the TF Lite interpreter: ",
-                       error_reporter_.error_message));
+                       error_reporter_.message()));
     }
     if (*interpreter_out == nullptr) {
       return CreateStatusWithPayload(StatusCode::kInternal,
                                      "TF Lite interpreter is null.");
     }
-#endif
     return absl::OkStatus();
   };
 
   absl::Status status =
       interpreter_.InitializeWithFallback(initializer, compute_settings);
-
-  if (!status.ok() &&
-      !status.GetPayload(tflite::support::kTfLiteSupportPayload).has_value()) {
-    status = CreateStatusWithPayload(status.code(), status.message());
+  if (!status.ok()) {
+    if (absl::StrContains(error_reporter_.previous_message(),
+                          "Encountered unresolved custom op")) {
+      return CreateStatusWithPayload(StatusCode::kInvalidArgument,
+                                     error_reporter_.previous_message(),
+                                     TfLiteSupportStatus::kUnsupportedCustomOp);
+    } else if (absl::StrContains(error_reporter_.previous_message(),
+                                 "Didn't find op for builtin opcode")) {
+      return CreateStatusWithPayload(
+          StatusCode::kInvalidArgument, error_reporter_.previous_message(),
+          TfLiteSupportStatus::kUnsupportedBuiltinOp);
+    } else if (!status.GetPayload(tflite::support::kTfLiteSupportPayload)
+                    .has_value()) {
+      return CreateStatusWithPayload(status.code(), status.message());
+    }
   }
   return status;
 }

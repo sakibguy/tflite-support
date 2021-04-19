@@ -20,6 +20,7 @@ import static org.tensorflow.lite.support.common.SupportPreconditions.checkNotNu
 
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
+import android.media.Image;
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
@@ -61,6 +62,12 @@ final class BitmapContainer implements ImageContainer {
     TensorBuffer buffer = TensorBuffer.createDynamic(dataType);
     ImageConversions.convertBitmapToTensorBuffer(bitmap, buffer);
     return buffer;
+  }
+
+  @Override
+  public Image getMediaImage() {
+    throw new UnsupportedOperationException(
+        "Converting from Bitmap to android.media.Image is unsupported.");
   }
 
   @Override

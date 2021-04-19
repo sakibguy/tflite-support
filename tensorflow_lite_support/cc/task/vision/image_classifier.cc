@@ -19,7 +19,6 @@ limitations under the License.
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
-#include "tensorflow/lite/interpreter.h"
 #include "tensorflow_lite_support/cc/common.h"
 #include "tensorflow_lite_support/cc/port/integral_types.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
@@ -78,10 +77,11 @@ StatusOr<std::unique_ptr<ImageClassifier>> ImageClassifier::CreateFromOptions(
   // Copy options to ensure the ExternalFile outlives the constructed object.
   auto options_copy = absl::make_unique<ImageClassifierOptions>(options);
 
-  ASSIGN_OR_RETURN(auto image_classifier,
-                   TaskAPIFactory::CreateFromExternalFileProto<ImageClassifier>(
-                       &options_copy->model_file_with_metadata(),
-                       std::move(resolver), options_copy->num_threads()));
+  ASSIGN_OR_RETURN(
+      auto image_classifier,
+      TaskAPIFactory::CreateFromExternalFileProto<ImageClassifier>(
+          &options_copy->model_file_with_metadata(), std::move(resolver),
+          options_copy->num_threads(), options_copy->compute_settings()));
 
   RETURN_IF_ERROR(image_classifier->Init(std::move(options_copy)));
 

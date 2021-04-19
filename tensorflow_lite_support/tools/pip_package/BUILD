@@ -12,6 +12,13 @@ COMMON_PIP_DEPS = [
     "setup.py",
     "//tensorflow_lite_support/codegen/python:codegen",
     "//tensorflow_lite_support/metadata/python:metadata",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:writer_utils",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:metadata_info",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:image_classifier",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:object_detector",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:image_segmenter",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:audio_classifier",
+    "//tensorflow_lite_support/metadata/python/metadata_writers:nl_classifier",
 ]
 
 filegroup(
@@ -34,7 +41,14 @@ filegroup(
 sh_binary(
     name = "build_pip_package",
     srcs = ["build_pip_package.sh"],
-    data = COMMON_PIP_DEPS,
+    data = COMMON_PIP_DEPS +
+           select({
+               "@org_tensorflow//tensorflow:windows": [
+                   ":simple_console_for_windows",
+               ],
+               "//conditions:default": [
+               ],
+           }),
 )
 
 # On Windows, python binary is a zip file of runfiles tree.

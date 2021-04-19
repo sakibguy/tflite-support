@@ -37,15 +37,25 @@ http_archive(
     ],
 )
 
-# tf-nightly-20200810
+# TF on 2021-04-09.
+TENSORFLOW_COMMIT = "002fa55fbb67acbe082f46c2488200adff3580d4"
+TENSORFLOW_SHA256 = "362ecd9613308aa920be559ba32cd5c45fd482d42e3e76492957308285ff0681"
+# These values come from tensorflow/workspace3.bzl. If the TF commit is updated,
+# these should be updated to match.
+IO_BAZEL_RULES_CLOSURE_COMMIT = "308b05b2419edb5c8ee0471b67a40403df940149"
+IO_BAZEL_RULES_CLOSURE_SHA256 = "5b00383d08dd71f28503736db0500b6fb4dda47489ff5fc6bed42557c07c6ba9"
 http_archive(
     name = "org_tensorflow",
-    sha256 = "fc6d7c57cd9427e695a38ad00fb6ecc3f623bac792dd44ad73a3f85b338b68be",
-    strip_prefix = "tensorflow-8a4ffe2e1ae722cff5306778df0cfca8b7f503fe",
+    sha256 = TENSORFLOW_SHA256,
+    strip_prefix = "tensorflow-" + TENSORFLOW_COMMIT,
     urls = [
-        "https://github.com/tensorflow/tensorflow/archive/8a4ffe2e1ae722cff5306778df0cfca8b7f503fe.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/" + TENSORFLOW_COMMIT
+        + ".tar.gz",
     ],
-    patches = ["@//third_party:tensorflow_lite_ios_build.patch"],
+    patches = [
+        # We need to rename lite/ios/BUILD.apple to lite/ios/BUILD.
+        "@//third_party:tensorflow_lite_ios_build.patch",
+    ],
     patch_args = ["-p1"],
 )
 
@@ -60,11 +70,11 @@ gflags()
 third_party_http_archive(
     name = "pybind11",
     urls = [
-        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/pybind/pybind11/archive/v2.4.3.tar.gz",
-        "https://github.com/pybind/pybind11/archive/v2.4.3.tar.gz",
+        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/pybind/pybind11/archive/v2.6.0.tar.gz",
+        "https://github.com/pybind/pybind11/archive/v2.6.0.tar.gz",
     ],
-    sha256 = "1eed57bc6863190e35637290f97a20c81cfe4d9090ac0a24f3bbf08f265eb71d",
-    strip_prefix = "pybind11-2.4.3",
+    sha256 = "90b705137b69ee3b5fc655eaca66d0dc9862ea1759226f7ccd3098425ae69571",
+    strip_prefix = "pybind11-2.6.0",
     build_file = "//third_party:pybind11.BUILD",
 )
 
@@ -175,12 +185,12 @@ http_archive(
 
 http_archive(
     name = "libyuv",
-    urls = ["https://chromium.googlesource.com/libyuv/libyuv/+archive/6d603ec3f57dafddc424ef895e5d903915e94ba6.tar.gz"],
-    # Adding the constrain of sha256 and strip_prefix will cause failure.
-    # It seems that the downloaded libyuv was different every time, so that
-    # the specified sha256 and strip_prefix cannot match.
-    # sha256 = "ce196c72858456baa8022fa4a0dc18b77d619265dbc0e3d58e25ad15ca402522",
-    # strip_prefix = "libyuv-6d603ec3f57dafddc424ef895e5d903915e94ba6",
+    urls = ["https://chromium.googlesource.com/libyuv/libyuv/+archive/39240f7149cffde62e3620344d222c8ab2c21178.tar.gz"],
+    # Adding the constrain of sha256 and strip_prefix will cause failure as of
+    # Jan 2021. It seems that the downloaded libyuv was different every time,
+    # so that the specified sha256 and strip_prefix cannot match.
+    # sha256 = "01c2e30eb8e83880f9ba382f6bece9c38cd5b07f9cadae46ef1d5a69e07fafaf",
+    # strip_prefix = "libyuv-39240f7149cffde62e3620344d222c8ab2c21178",
     build_file = "//third_party:libyuv.BUILD",
 )
 
@@ -243,17 +253,19 @@ http_archive(
 )
 
 http_archive(
-    name = "com_google_protobuf",
-    sha256 = "a79d19dcdf9139fa4b81206e318e33d245c4c9da1ffed21c87288ed4380426f9",
-    strip_prefix = "protobuf-3.11.4",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.11.4.tar.gz"],
-    patches = [
-        "@//third_party:com_google_protobuf_fixes.diff"
-    ],
-    patch_args = [
-        "-p1",
-    ],
+  name = "libedgetpu",
+  sha256 = "d76d18c5a96758dd620057028cdd4e129bd885480087a5c7334070bba3797e58",
+  strip_prefix = "libedgetpu-14eee1a076aa1af7ec1ae3c752be79ae2604a708",
+  urls = [
+    "https://github.com/google-coral/libedgetpu/archive/14eee1a076aa1af7ec1ae3c752be79ae2604a708.tar.gz"
+  ],
 )
+
+# Set up TensorFlow version for Coral.
+load("@libedgetpu//:workspace.bzl", "libedgetpu_dependencies")
+libedgetpu_dependencies(TENSORFLOW_COMMIT, TENSORFLOW_SHA256,
+                        IO_BAZEL_RULES_CLOSURE_COMMIT,
+                        IO_BAZEL_RULES_CLOSURE_SHA256)
 
 # AutoValue 1.6+ shades Guava, Auto Common, and JavaPoet. That's OK
 # because none of these jars become runtime dependencies.
@@ -320,9 +332,27 @@ java_import_external(
 load("//third_party/flatbuffers:workspace.bzl", flatbuffers = "repo")
 
 flatbuffers()
+
+RULES_JVM_EXTERNAL_TAG = "3.2"
+
+http_archive(
+    name = "rules_jvm_external",
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    sha256 = "82262ff4223c5fda6fb7ff8bd63db8131b51b413d26eb49e3131037e79e324af",
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+)
+
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+
 # Set up TF.
-load("@org_tensorflow//tensorflow:workspace.bzl", "tf_workspace")
-tf_workspace(tf_repo_name="@org_tensorflow")
+load("@org_tensorflow//tensorflow:workspace3.bzl", "workspace")
+workspace()
+load("@org_tensorflow//tensorflow:workspace2.bzl", "workspace")  # buildifier: disable=load
+workspace()
+load("@org_tensorflow//tensorflow:workspace1.bzl", "workspace")  # buildifier: disable=load
+workspace()
+load("@org_tensorflow//tensorflow:workspace0.bzl", "workspace")  # buildifier: disable=load
+workspace()
 
 load("//third_party/tensorflow:tf_configure.bzl", "tf_configure")
 tf_configure(name = "local_config_tf")
@@ -347,27 +377,10 @@ load("@upb//bazel:repository_defs.bzl", "bazel_version_repository")
 bazel_version_repository(name = "bazel_version")
 
 
-# Set up Android.
-load("//third_party/android:android_configure.bzl", "android_configure")
-android_configure(name="local_config_android")
-load("@local_config_android//:android.bzl", "android_workspace")
-android_workspace()
-
 python_configure(name = "local_config_python")
 
 
 # Maven dependencies.
-
-RULES_JVM_EXTERNAL_TAG = "3.2"
-
-http_archive(
-    name = "rules_jvm_external",
-    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
-    sha256 = "82262ff4223c5fda6fb7ff8bd63db8131b51b413d26eb49e3131037e79e324af",
-    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
-)
-
-load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
     artifacts = [

@@ -33,25 +33,15 @@ constexpr int kRgbaChannels = 4;
 constexpr int kRgbChannels = 3;
 constexpr int kGrayChannel = 1;
 
-// Creates a FrameBuffer from raw NV12 buffer and passing arguments.
-std::unique_ptr<FrameBuffer> CreateFromNV12RawBuffer(
+// Creates a FrameBuffer from one plane raw NV21/NV12 buffer and passing
+// arguments.
+StatusOr<std::unique_ptr<FrameBuffer>> CreateFromOnePlaneNVRawBuffer(
     const uint8* input, FrameBuffer::Dimension dimension,
-    FrameBuffer::Orientation orientation, const absl::Time timestamp) {
-  const std::vector<FrameBuffer::Plane> planes_nv12 = {
-      {input, /*stride=*/{dimension.width, kGrayChannel}},
-      {input + dimension.Size(), /*stride=*/{dimension.width, 2}}};
-  return FrameBuffer::Create(planes_nv12, dimension, FrameBuffer::Format::kNV12,
-                             orientation, timestamp);
-}
-
-// Creates a FrameBuffer from raw NV21 buffer and passing arguments.
-std::unique_ptr<FrameBuffer> CreateFromNV21RawBuffer(
-    const uint8* input, FrameBuffer::Dimension dimension,
-    FrameBuffer::Orientation orientation, const absl::Time timestamp) {
+    FrameBuffer::Format format, FrameBuffer::Orientation orientation,
+    const absl::Time timestamp) {
   FrameBuffer::Plane input_plane = {/*buffer=*/input,
                                     /*stride=*/{dimension.width, kGrayChannel}};
-  return FrameBuffer::Create({input_plane}, dimension,
-                             FrameBuffer::Format::kNV21, orientation,
+  return FrameBuffer::Create({input_plane}, dimension, format, orientation,
                              timestamp);
 }
 
@@ -97,12 +87,12 @@ int GetFrameBufferByteSize(FrameBuffer::Dimension dimension,
     case FrameBuffer::Format::kYV12:
     case FrameBuffer::Format::kYV21:
       return /*y plane*/ dimension.Size() +
-             /*uv plane*/ ((static_cast<float>(dimension.width + 1) / 2) *
-                           (static_cast<float>(dimension.height + 1) / 2) * 2);
+             /*uv plane*/ (dimension.width + 1) / 2 * (dimension.height + 1) /
+                 2 * 2;
     case FrameBuffer::Format::kRGB:
-      return dimension.Size() * 3;
+      return dimension.Size() * kRgbPixelBytes;
     case FrameBuffer::Format::kRGBA:
-      return dimension.Size() * 4;
+      return dimension.Size() * kRgbaPixelBytes;
     case FrameBuffer::Format::kGRAY:
       return dimension.Size();
     default:
@@ -387,9 +377,11 @@ StatusOr<std::unique_ptr<FrameBuffer>> CreateFromRawBuffer(
     FrameBuffer::Orientation orientation, absl::Time timestamp) {
   switch (target_format) {
     case FrameBuffer::Format::kNV12:
-      return CreateFromNV12RawBuffer(buffer, dimension, orientation, timestamp);
+      return CreateFromOnePlaneNVRawBuffer(buffer, dimension, target_format,
+                                           orientation, timestamp);
     case FrameBuffer::Format::kNV21:
-      return CreateFromNV21RawBuffer(buffer, dimension, orientation, timestamp);
+      return CreateFromOnePlaneNVRawBuffer(buffer, dimension, target_format,
+                                           orientation, timestamp);
     case FrameBuffer::Format::kYV12: {
       ASSIGN_OR_RETURN(const FrameBuffer::Dimension uv_dimension,
                        GetUvPlaneDimension(dimension, target_format));

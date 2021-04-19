@@ -20,7 +20,10 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/substitute.h"
 #include "tensorflow_lite_support/cc/utils/common_utils.h"
-namespace tflite::support::text::tokenizer {
+namespace tflite {
+namespace support {
+namespace text {
+namespace tokenizer {
 
 namespace {
 constexpr char kStart[] = "<START>";
@@ -30,8 +33,8 @@ constexpr char kUnknown[] = "<UNKNOWN>";
 void buildIndexTokenMap(
     const absl::node_hash_map<std::string, int>& token_index_map,
     absl::node_hash_map<int, absl::string_view>* index_token_map) {
-  for (const auto& [token, index] : token_index_map) {
-    (*index_token_map)[index] = token.data();
+  for (const auto& token : token_index_map) {
+    (*index_token_map)[token.second] = token.first;
   }
 }
 
@@ -116,4 +119,7 @@ bool RegexTokenizer::GetUnknownToken(int* unknown_token) {
   return LookupId(kUnknown, unknown_token);
 }
 
-}  // namespace tflite::support::text::tokenizer
+}  // namespace tokenizer
+}  // namespace text
+}  // namespace support
+}  // namespace tflite

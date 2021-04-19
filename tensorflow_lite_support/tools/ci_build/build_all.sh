@@ -17,13 +17,17 @@
 
 set -ex
 
+bash tensorflow_lite_support/custom_ops/tf_configure.sh
+
 bazel build -c opt --config=monolithic \
     //tensorflow_lite_support/java:tensorflowlite_support \
     //tensorflow_lite_support/codegen/python:codegen \
     //tensorflow_lite_support/metadata/java:tensorflowlite_support_metadata_lib \
     //tensorflow_lite_support/metadata/cc:metadata_extractor \
     //tensorflow_lite_support/custom_ops/kernel:all \
-    //tensorflow_lite_support/custom_ops/python:tflite_text_api
+    //tensorflow_lite_support/custom_ops/python:tflite_text_api \
+    //tensorflow_lite_support/cc/task/audio:audio_classifier \
+    //tensorflow_lite_support/cc/task/vision:image_embedder
 
 # Build Task libraries.
 bazel build -c opt --config=monolithic \
@@ -31,3 +35,16 @@ bazel build -c opt --config=monolithic \
     //tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/core:base-task-api.aar \
     //tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/text:task-library-text \
     //tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/vision:task-library-vision
+
+# Build Coral plugin
+bazel build --sandbox_debug --subcommands --define=darwinn_portable=1 \
+    //tensorflow_lite_support/acceleration/configuration:edgetpu_coral_plugin
+
+# Run Metadata tests.
+bazel clean --expunge
+
+bazel test --test_output=all \
+    //tensorflow_lite_support/metadata/python/tests:metadata_test \
+    //tensorflow_lite_support/metadata/python/tests/metadata_writers:all \
+    //tensorflow_lite_support/custom_ops/kernel/sentencepiece:all
+

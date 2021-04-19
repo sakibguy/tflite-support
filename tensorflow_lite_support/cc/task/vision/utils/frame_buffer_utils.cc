@@ -25,8 +25,8 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
-#include "tensorflow/lite/kernels/op_macros.h"
 #include "tensorflow/lite/kernels/internal/compatibility.h"
+#include "tensorflow/lite/kernels/op_macros.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
 #include "tensorflow_lite_support/cc/task/vision/utils/frame_buffer_common_utils.h"
 #include "tensorflow_lite_support/cc/task/vision/utils/libyuv_frame_buffer_utils.h"
@@ -347,9 +347,10 @@ std::vector<FrameBuffer::Plane> FrameBufferUtils::GetPlanes(
       planes.push_back(
           {buffer, /*stride=*/{/*row_stride_bytes=*/dimension.width,
                                /*pixel_stride_bytes=*/1}});
-      planes.push_back({buffer + (dimension.width * dimension.height),
-                        /*stride=*/{/*row_stride_bytes=*/dimension.width,
-                                    /*pixel_stride_bytes=*/2}});
+      planes.push_back(
+          {buffer + (dimension.width * dimension.height),
+           /*stride=*/{/*row_stride_bytes=*/(dimension.width + 1) / 2 * 2,
+                       /*pixel_stride_bytes=*/2}});
     } break;
     case FrameBuffer::Format::kYV12:
     case FrameBuffer::Format::kYV21: {
@@ -592,16 +593,32 @@ absl::Status FrameBufferUtils::Preprocess(
         CropResizeOperation(0, 0, buffer.dimension(), pre_orient_dimension));
   }
 
-  // Handle color space conversion.
-  if (output_buffer->format() != buffer.format()) {
-    frame_buffer_operations.push_back(
-        ConvertOperation(output_buffer->format()));
-  }
-
-  // Handle orientation conversion.
-  if (output_buffer->orientation() != buffer.orientation()) {
-    frame_buffer_operations.push_back(
-        OrientOperation(output_buffer->orientation()));
+  // Handle color space conversion first if the input format is RGB or RGBA,
+  // because the rotation performance for RGB and RGBA formats are not optimzed
+  // in libyuv.
+  if (buffer.format() == FrameBuffer::Format::kRGB ||
+      buffer.format() == FrameBuffer::Format::kRGBA) {
+    if (output_buffer->format() != buffer.format()) {
+      frame_buffer_operations.push_back(
+          ConvertOperation(output_buffer->format()));
+    }
+    // Handle orientation conversion
+    if (output_buffer->orientation() != buffer.orientation()) {
+      frame_buffer_operations.push_back(
+          OrientOperation(output_buffer->orientation()));
+    }
+  } else {
+    // Handle orientation conversion first if the input format is not RGB or
+    // RGBA.
+    if (output_buffer->orientation() != buffer.orientation()) {
+      frame_buffer_operations.push_back(
+          OrientOperation(output_buffer->orientation()));
+    }
+    // Handle color space conversion
+    if (output_buffer->format() != buffer.format()) {
+      frame_buffer_operations.push_back(
+          ConvertOperation(output_buffer->format()));
+    }
   }
 
   // Execute the processing pipeline.

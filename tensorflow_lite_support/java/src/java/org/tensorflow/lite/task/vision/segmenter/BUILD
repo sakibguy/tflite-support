@@ -15,18 +15,33 @@ filegroup(
     srcs = glob(["**/*.java"]),
 )
 
+# Default target that uses BuiltInOpResolver, registers all built-in OPs.
 android_library(
     name = "image_segmenter",
-    srcs = glob(["*.java"]),
+    exports = [
+        ":image_segmenter_java",
+        "//tensorflow_lite_support/java/src/native/task/vision/segmenter:image_segmenter_native",
+    ],
+)
+
+# Java-only target, need to be used together with a native target similar to
+# //third_party/tensorflow_lite_support/java/src/native/task/vision/segmenter:image_segmenter_native",
+# Use this target when you want to provide a MutableOpResolver with customized
+# OPs and/or a subset of BuiltInOps to reduce binary size.
+android_library(
+    name = "image_segmenter_java",
+    srcs = glob(["*.java"]) + [
+        "//tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/vision/core:base_vision_api_src",
+    ],
     # TODO(b/163039980): Use JAVACOPTS in TF. "-Xep:RemoveUnusedImports:ERROR" wierdly break the build.
     javacopts = ["-source 7 -target 7"],
     manifest = "AndroidManifest.xml",
     deps = [
         "//tensorflow_lite_support/java:tensorflowlite_support_java",
         "//tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/core:base_task_api",
-        "//tensorflow_lite_support/java/src/native/task/vision/segmenter:image_segmenter_native",
+        "//third_party/java/androidx/annotation",
         "@com_google_auto_value",
-        "@maven//:androidx_annotation_annotation",
+        "@org_checkerframework_qual",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java",
     ],
 )

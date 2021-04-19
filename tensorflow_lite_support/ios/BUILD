@@ -1,9 +1,9 @@
 # TensorFlow Lite Task Library - Text
 
 load(
-    "@org_tensorflow//tensorflow/lite/experimental/ios:ios.bzl",
+    "@org_tensorflow//tensorflow/lite/ios:ios.bzl",
     "TFL_MINIMUM_OS_VERSION",
-    "tflite_ios_static_framework",
+    "tflite_ios_framework",
 )
 load(
     "//tensorflow_lite_support/ios:ios.bzl",
@@ -29,7 +29,7 @@ strip_c_api_include_path_prefix(
 # which includes the TFLite runtime in it.
 #
 # bazel build -c opt --config=ios_fat //tensorflow_lite_support/ios:TensorFlowLiteTaskTextC_framework
-tflite_ios_static_framework(
+tflite_ios_framework(
     name = "TensorFlowLiteTaskTextC_framework",
     hdrs = [
         ":bert_nl_classifier_c_api.h",

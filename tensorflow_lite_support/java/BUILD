@@ -15,6 +15,11 @@ exports_files([
     "debug_version_script.lds",
 ])
 
+# Android Library target for TFLite Support Library. It depends on TensorFlow
+# Lite runtime (tensorflow/lite/java:tensorflowlite). If you don't want to
+# introduce the native library into dependencies, use
+# "tensorflowlite_support_java" instead, which depends on
+# tensorflow/lite/java:tensorflowlite_java.
 android_library(
     name = "tensorflowlite_support",
     srcs = glob(
@@ -23,6 +28,7 @@ android_library(
     javacopts = JAVACOPTS,
     manifest = "AndroidManifest.xml",
     deps = [
+        "@com_google_auto_value",
         "@org_checkerframework_qual",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite",
     ],
@@ -36,6 +42,7 @@ android_library(
     javacopts = JAVACOPTS,
     manifest = "AndroidManifest.xml",
     deps = [
+        "@com_google_auto_value",
         "@org_checkerframework_qual",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java",
     ],

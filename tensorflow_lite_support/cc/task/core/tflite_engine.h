@@ -23,25 +23,17 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
-#include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/core/api/op_resolver.h"
-#include "tensorflow/lite/kernels/register.h"
+#include "tensorflow/lite/core/shims/c/common.h"
+#include "tensorflow/lite/core/shims/cc/interpreter.h"
+#include "tensorflow/lite/core/shims/cc/kernels/register.h"
+#include "tensorflow/lite/core/shims/cc/model.h"
+#include "tensorflow_lite_support/cc/port/configuration_proto_inc.h"
 #include "tensorflow_lite_support/cc/port/tflite_wrapper.h"
+#include "tensorflow_lite_support/cc/task/core/error_reporter.h"
 #include "tensorflow_lite_support/cc/task/core/external_file_handler.h"
 #include "tensorflow_lite_support/cc/task/core/proto/external_file_proto_inc.h"
 #include "tensorflow_lite_support/metadata/cc/metadata_extractor.h"
-
-// TODO(b/168025296): eliminate the '#if TFLITE_USE_C_API' directives here and
-// elsewhere and instead use the C API unconditionally, once we have a suitable
-// replacement for the features of tflite::support::TfLiteInterpreterWrapper.
-#if TFLITE_USE_C_API
-#include "tensorflow/lite/c/c_api.h"
-#include "tensorflow/lite/core/api/verifier.h"
-#include "tensorflow/lite/tools/verifier.h"
-#else
-#include "tensorflow/lite/interpreter.h"
-#include "tensorflow/lite/model.h"
-#endif
 
 namespace tflite {
 namespace task {
@@ -52,98 +44,42 @@ namespace core {
 class TfLiteEngine {
  public:
   // Types.
-#if TFLITE_USE_C_API
-  using Model = struct TfLiteModel;
-  using Interpreter = struct TfLiteInterpreter;
-  using ModelDeleter = void (*)(Model*);
-  using InterpreterDeleter = void (*)(Interpreter*);
-  // TODO(fergus): support all the features of
-  // tflite::support::tfLiteInterpreterWrapper.
-  class InterpreterWrapper {
-   public:
-    InterpreterWrapper() : impl_(nullptr, TfLiteInterpreterDelete) {}
-    absl::Status InitializeWithFallback(
-        std::function<
-            absl::Status(std::unique_ptr<Interpreter, InterpreterDeleter>*)>
-            interpreter_initializer,
-        const tflite::proto::ComputeSettings& compute_settings);
-    absl::Status InvokeWithoutFallback();
-    absl::Status InvokeWithFallback(
-        const std::function<absl::Status(Interpreter* interpreter)>&
-            set_inputs);
-    Interpreter* get() { return impl_.get(); }
-    const Interpreter* get() const { return impl_.get(); }
-    void reset(Interpreter* interpreter) { impl_.reset(interpreter); }
-
-   private:
-    std::unique_ptr<Interpreter, InterpreterDeleter> impl_;
-  };
-#else
-  using Model = tflite::FlatBufferModel;
-  using Interpreter = tflite::Interpreter;
+  using InterpreterWrapper = ::tflite::support::TfLiteInterpreterWrapper;
+  using Model = ::tflite_shims::FlatBufferModel;
+  using Interpreter = ::tflite_shims::Interpreter;
   using ModelDeleter = std::default_delete<Model>;
   using InterpreterDeleter = std::default_delete<Interpreter>;
-  using InterpreterWrapper = tflite::support::TfLiteInterpreterWrapper;
-#endif
 
   // Constructors.
   explicit TfLiteEngine(
       std::unique_ptr<tflite::OpResolver> resolver =
-          absl::make_unique<tflite::ops::builtin::BuiltinOpResolver>());
+          absl::make_unique<tflite_shims::ops::builtin::BuiltinOpResolver>());
   // Model is neither copyable nor movable.
   TfLiteEngine(const TfLiteEngine&) = delete;
   TfLiteEngine& operator=(const TfLiteEngine&) = delete;
 
   // Accessors.
   static int32_t InputCount(const Interpreter* interpreter) {
-#if TFLITE_USE_C_API
-    return TfLiteInterpreterGetInputTensorCount(interpreter);
-#else
     return interpreter->inputs().size();
-#endif
   }
   static int32_t OutputCount(const Interpreter* interpreter) {
-#if TFLITE_USE_C_API
-    return TfLiteInterpreterGetOutputTensorCount(interpreter);
-#else
     return interpreter->outputs().size();
-#endif
   }
   static TfLiteTensor* GetInput(Interpreter* interpreter, int index) {
-#if TFLITE_USE_C_API
-    return TfLiteInterpreterGetInputTensor(interpreter, index);
-#else
     return interpreter->tensor(interpreter->inputs()[index]);
-#endif
   }
   // Same as above, but const.
   static const TfLiteTensor* GetInput(const Interpreter* interpreter,
                                       int index) {
-#if TFLITE_USE_C_API
-    return TfLiteInterpreterGetInputTensor(interpreter, index);
-#else
     return interpreter->tensor(interpreter->inputs()[index]);
-#endif
   }
   static TfLiteTensor* GetOutput(Interpreter* interpreter, int index) {
-#if TFLITE_USE_C_API
-    // We need a const_cast here, because the TF Lite C API only has a non-const
-    // version of GetOutputTensor (in part because C doesn't support overloading
-    // on const).
-    return const_cast<TfLiteTensor*>(
-        TfLiteInterpreterGetOutputTensor(interpreter, index));
-#else
     return interpreter->tensor(interpreter->outputs()[index]);
-#endif
   }
   // Same as above, but const.
   static const TfLiteTensor* GetOutput(const Interpreter* interpreter,
                                        int index) {
-#if TFLITE_USE_C_API
-    return TfLiteInterpreterGetOutputTensor(interpreter, index);
-#else
     return interpreter->tensor(interpreter->outputs()[index]);
-#endif
   }
 
   std::vector<TfLiteTensor*> GetInputs();
@@ -161,51 +97,55 @@ class TfLiteEngine {
   // whose ownership remains with the caller, and which must outlive the current
   // object. This performs extra verification on the input data using
   // tflite::Verify.
-  absl::Status BuildModelFromFlatBuffer(const char* buffer_data,
-                                        size_t buffer_size);
+  absl::Status BuildModelFromFlatBuffer(
+      const char* buffer_data, size_t buffer_size,
+      const tflite::proto::ComputeSettings& compute_settings =
+          tflite::proto::ComputeSettings());
 
   // Builds the TF Lite model from a given file.
-  absl::Status BuildModelFromFile(const std::string& file_name);
+  absl::Status BuildModelFromFile(
+      const std::string& file_name,
+      const tflite::proto::ComputeSettings& compute_settings =
+          tflite::proto::ComputeSettings());
 
   // Builds the TF Lite model from a given file descriptor using mmap(2).
-  absl::Status BuildModelFromFileDescriptor(int file_descriptor);
+  absl::Status BuildModelFromFileDescriptor(
+      int file_descriptor,
+      const tflite::proto::ComputeSettings& compute_settings =
+          tflite::proto::ComputeSettings());
 
   // Builds the TFLite model from the provided ExternalFile proto, which must
   // outlive the current object.
   absl::Status BuildModelFromExternalFileProto(
-      const ExternalFile* external_file);
+      const ExternalFile* external_file,
+      const tflite::proto::ComputeSettings& compute_settings =
+          tflite::proto::ComputeSettings());
 
   // Initializes interpreter with encapsulated model.
   // Note: setting num_threads to -1 has for effect to let TFLite runtime set
   // the value.
   absl::Status InitInterpreter(int num_threads = 1);
 
-  // Same as above, but allows specifying `compute_settings` for acceleration.
+  // Initializes interpreter with acceleration configurations.
+  absl::Status InitInterpreter(
+      const tflite::proto::ComputeSettings& compute_settings);
+
+  // Deprecated. Use the following method, and configure `num_threads` through
+  // `compute_settings`, i.e. in `CPUSettings`:
+  // absl::Status TfLiteEngine::InitInterpreter(
+  //    const tflite::proto::ComputeSettings& compute_settings)
   absl::Status InitInterpreter(
       const tflite::proto::ComputeSettings& compute_settings,
-      int num_threads = 1);
+      int num_threads);
 
   // Cancels the on-going `Invoke()` call if any and if possible. This method
   // can be called from a different thread than the one where `Invoke()` is
   // running.
-  void Cancel() {
-#if TFLITE_USE_C_API
-    // NOP.
-#else
-    interpreter_.Cancel();
-#endif
-  }
+  void Cancel() { interpreter_.Cancel(); }
 
  protected:
-  // TF Lite's DefaultErrorReporter() outputs to stderr. This one captures the
-  // error into a string so that it can be used to complement tensorflow::Status
+  // Custom error reporter capturing and printing to stderr low-level TF Lite
   // error messages.
-  struct ErrorReporter : public tflite::ErrorReporter {
-    // Last error message captured by this error reporter.
-    char error_message[256];
-    int Report(const char* format, va_list args) override;
-  };
-  // Custom error reporter capturing low-level TF Lite error messages.
   ErrorReporter error_reporter_;
 
  private:
@@ -213,12 +153,8 @@ class TfLiteEngine {
   // the FlatBuffer data provided as input.
   class Verifier : public tflite::TfLiteVerifier {
    public:
-    explicit Verifier(const tflite::OpResolver* op_resolver)
-        : op_resolver_(op_resolver) {}
     bool Verify(const char* data, int length,
                 tflite::ErrorReporter* reporter) override;
-    // The OpResolver to be used to build the TF Lite interpreter.
-    const tflite::OpResolver* op_resolver_;
   };
 
   // Verifies that the supplied buffer refers to a valid flatbuffer model,
@@ -226,13 +162,16 @@ class TfLiteEngine {
   // that was passed to the TfLiteEngine constructor, and then builds
   // the model from the buffer and stores it in 'model_'.
   void VerifyAndBuildModelFromBuffer(const char* buffer_data,
-                                     size_t buffer_size);
+                                     size_t buffer_size,
+                                     TfLiteVerifier* extra_verifier = nullptr);
 
   // Gets the buffer from the file handler; verifies and builds the model
   // from the buffer; if successful, sets 'model_metadata_extractor_' to be
   // a TF Lite Metadata extractor for the model; and calculates an appropriate
   // return Status,
-  absl::Status InitializeFromModelFileHandler();
+  absl::Status InitializeFromModelFileHandler(
+      const tflite::proto::ComputeSettings& compute_settings =
+          tflite::proto::ComputeSettings());
 
   // TF Lite model and interpreter for actual inference.
   std::unique_ptr<Model, ModelDeleter> model_;

@@ -17,18 +17,22 @@ package org.tensorflow.lite.task.vision.classifier;
 
 import android.content.Context;
 import android.graphics.Rect;
+import android.os.ParcelFileDescriptor;
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.annotations.UsedByReflection;
 import org.tensorflow.lite.support.image.TensorImage;
-import org.tensorflow.lite.task.core.BaseTaskApi;
 import org.tensorflow.lite.task.core.TaskJniUtils;
+import org.tensorflow.lite.task.core.TaskJniUtils.EmptyHandleProvider;
 import org.tensorflow.lite.task.core.TaskJniUtils.FdAndOptionsHandleProvider;
 import org.tensorflow.lite.task.core.vision.ImageProcessingOptions;
+import org.tensorflow.lite.task.vision.core.BaseVisionTaskApi;
+import org.tensorflow.lite.task.vision.core.BaseVisionTaskApi.InferenceProvider;
 
 /**
  * Performs classification on images.
@@ -52,6 +56,10 @@ import org.tensorflow.lite.task.core.vision.ImageProcessingOptions;
  *       <ul>
  *         <li>with {@code N} classes of either 2 or 4 dimensions, such as {@code [1 x N]} or {@code
  *             [1 x 1 x 1 x N]}
+ *         <li>the label file is required to be packed to the metadata. See the <a
+ *             href="https://www.tensorflow.org/lite/convert/metadata#label_output">example of
+ *             creating metadata for an image classifier</a>. If no label files are packed, it will
+ *             use index as label in the result.
  *       </ul>
  * </ul>
  *
@@ -59,9 +67,11 @@ import org.tensorflow.lite.task.core.vision.ImageProcessingOptions;
  * href="https://tfhub.dev/bohemian-visual-recognition-alliance/lite-model/models/mushroom-identification_v1/1">TensorFlow
  * Hub.</a>.
  */
-public final class ImageClassifier extends BaseTaskApi {
+public final class ImageClassifier extends BaseVisionTaskApi {
 
   private static final String IMAGE_CLASSIFIER_NATIVE_LIB = "task_vision_jni";
+  private static final int OPTIONAL_FD_LENGTH = -1;
+  private static final int OPTIONAL_FD_OFFSET = -1;
 
   /**
    * Creates an {@link ImageClassifier} instance from the default {@link ImageClassifierOptions}.
@@ -74,6 +84,33 @@ public final class ImageClassifier extends BaseTaskApi {
   public static ImageClassifier createFromFile(Context context, String modelPath)
       throws IOException {
     return createFromFileAndOptions(context, modelPath, ImageClassifierOptions.builder().build());
+  }
+
+  /**
+   * Creates an {@link ImageClassifier} instance from the default {@link ImageClassifierOptions}.
+   *
+   * @param modelFile the classification model {@link File} instance
+   * @throws IOException if an I/O error occurs when loading the tflite model
+   * @throws AssertionError if error occurs when creating {@link ImageClassifier} from the native
+   *     code
+   */
+  public static ImageClassifier createFromFile(File modelFile) throws IOException {
+    return createFromFileAndOptions(modelFile, ImageClassifierOptions.builder().build());
+  }
+
+  /**
+   * Creates an {@link ImageClassifier} instance with a model buffer and the default {@link
+   * ImageClassifierOptions}.
+   *
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the
+   *     classification model
+   * @throws AssertionError if error occurs when creating {@link ImageClassifier} from the native
+   *     code
+   * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
+   *     {@link MappedByteBuffer}
+   */
+  public static ImageClassifier createFromBuffer(final ByteBuffer modelBuffer) {
+    return createFromBufferAndOptions(modelBuffer, ImageClassifierOptions.builder().build());
   }
 
   /**
@@ -106,6 +143,62 @@ public final class ImageClassifier extends BaseTaskApi {
   }
 
   /**
+   * Creates an {@link ImageClassifier} instance.
+   *
+   * @param modelFile the classification model {@link File} instance
+   * @throws IOException if an I/O error occurs when loading the tflite model
+   * @throws AssertionError if error occurs when creating {@link ImageClassifier} from the native
+   *     code
+   */
+  public static ImageClassifier createFromFileAndOptions(
+      File modelFile, final ImageClassifierOptions options) throws IOException {
+    try (ParcelFileDescriptor descriptor =
+        ParcelFileDescriptor.open(modelFile, ParcelFileDescriptor.MODE_READ_ONLY)) {
+      return new ImageClassifier(
+          TaskJniUtils.createHandleFromLibrary(
+              new TaskJniUtils.EmptyHandleProvider() {
+                @Override
+                public long createHandle() {
+                  return initJniWithModelFdAndOptions(
+                      descriptor.getFd(),
+                      /*fileDescriptorLength=*/ OPTIONAL_FD_LENGTH,
+                      /*fileDescriptorOffset=*/ OPTIONAL_FD_OFFSET,
+                      options);
+                }
+              },
+              IMAGE_CLASSIFIER_NATIVE_LIB));
+    }
+  }
+
+  /**
+   * Creates an {@link ImageClassifier} instance with a model buffer and {@link
+   * ImageClassifierOptions}.
+   *
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the
+   *     classification model
+   * @throws AssertionError if error occurs when creating {@link ImageClassifier} from the native
+   *     code
+   * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
+   *     {@link MappedByteBuffer}
+   */
+  public static ImageClassifier createFromBufferAndOptions(
+      final ByteBuffer modelBuffer, final ImageClassifierOptions options) {
+    if (!(modelBuffer.isDirect() || modelBuffer instanceof MappedByteBuffer)) {
+      throw new IllegalArgumentException(
+          "The model buffer should be either a direct ByteBuffer or a MappedByteBuffer.");
+    }
+    return new ImageClassifier(
+        TaskJniUtils.createHandleFromLibrary(
+            new EmptyHandleProvider() {
+              @Override
+              public long createHandle() {
+                return initJniWithByteBuffer(modelBuffer, options);
+              }
+            },
+            IMAGE_CLASSIFIER_NATIVE_LIB));
+  }
+
+  /**
    * Constructor to initialize the JNI with a pointer from C++.
    *
    * @param nativeHandle a pointer referencing memory allocated in C++
@@ -134,6 +227,7 @@ public final class ImageClassifier extends BaseTaskApi {
     // vulnerable.
     private final List<String> labelAllowList;
     private final List<String> labelDenyList;
+    private final int numThreads;
 
     public static Builder builder() {
       return new Builder();
@@ -147,6 +241,7 @@ public final class ImageClassifier extends BaseTaskApi {
       private boolean isScoreThresholdSet = false;
       private List<String> labelAllowList = new ArrayList<>();
       private List<String> labelDenyList = new ArrayList<>();
+      private int numThreads = -1;
 
       private Builder() {}
 
@@ -213,6 +308,18 @@ public final class ImageClassifier extends BaseTaskApi {
         return this;
       }
 
+      /**
+       * Sets the number of threads to be used for TFLite ops that support multi-threading when
+       * running inference with CPU. Defaults to -1.
+       *
+       * <p>numThreads should be greater than 0 or equal to -1. Setting numThreads to -1 has the
+       * effect to let TFLite runtime set the value.
+       */
+      public Builder setNumThreads(int numThreads) {
+        this.numThreads = numThreads;
+        return this;
+      }
+
       public ImageClassifierOptions build() {
         return new ImageClassifierOptions(this);
       }
@@ -248,6 +355,11 @@ public final class ImageClassifier extends BaseTaskApi {
       return new ArrayList<>(labelDenyList);
     }
 
+    @UsedByReflection("image_classifier_jni.cc")
+    public int getNumThreads() {
+      return numThreads;
+    }
+
     private ImageClassifierOptions(Builder builder) {
       displayNamesLocale = builder.displayNamesLocale;
       maxResults = builder.maxResults;
@@ -255,14 +367,26 @@ public final class ImageClassifier extends BaseTaskApi {
       isScoreThresholdSet = builder.isScoreThresholdSet;
       labelAllowList = builder.labelAllowList;
       labelDenyList = builder.labelDenyList;
+      numThreads = builder.numThreads;
     }
   }
 
   /**
    * Performs actual classification on the provided image.
    *
-   * @param image a {@link TensorImage} object that represents an RGB image
+   * <p>{@link ImageClassifier} supports the following {@link TensorImage} color space types:
+   *
+   * <ul>
+   *   <li>{@link ColorSpaceType#RGB}
+   *   <li>{@link ColorSpaceType#NV12}
+   *   <li>{@link ColorSpaceType#NV21}
+   *   <li>{@link ColorSpaceType#YV12}
+   *   <li>{@link ColorSpaceType#YV21}
+   * </ul>
+   *
+   * @param image a UINT8 {@link TensorImage} object that represents an RGB or YUV image
    * @throws AssertionError if error occurs when classifying the image from the native code
+   * @throws IllegalArgumentException if the color space type of image is unsupported
    */
   public List<Classifications> classify(TensorImage image) {
     return classify(image, ImageProcessingOptions.builder().build());
@@ -280,30 +404,43 @@ public final class ImageClassifier extends BaseTaskApi {
    *       defaults to {@link ImageProcessingOptions#Orientation#TOP_LEFT}.
    * </ul>
    *
-   * @param image a {@link TensorImage} object that represents an RGB image
+   * <p>{@link ImageClassifier} supports the following {@link TensorImage} color space types:
+   *
+   * <ul>
+   *   <li>{@link ColorSpaceType#RGB}
+   *   <li>{@link ColorSpaceType#NV12}
+   *   <li>{@link ColorSpaceType#NV21}
+   *   <li>{@link ColorSpaceType#YV12}
+   *   <li>{@link ColorSpaceType#YV21}
+   * </ul>
+   *
+   * @param image a UINT8 {@link TensorImage} object that represents an RGB or YUV image
    * @throws AssertionError if error occurs when classifying the image from the native code
+   * @throws IllegalArgumentException if the color space type of image is unsupported
    */
   public List<Classifications> classify(TensorImage image, ImageProcessingOptions options) {
+    return run(
+        new InferenceProvider<List<Classifications>>() {
+          @Override
+          public List<Classifications> run(
+              long frameBufferHandle, int width, int height, ImageProcessingOptions options) {
+            return classify(frameBufferHandle, width, height, options);
+          }
+        },
+        image,
+        options);
+  }
+
+  private List<Classifications> classify(
+      long frameBufferHandle, int width, int height, ImageProcessingOptions options) {
     checkNotClosed();
 
-    // image_classifier_jni.cc expects an uint8 image. Convert image of other types into uint8.
-    TensorImage imageUint8 =
-        image.getDataType() == DataType.UINT8
-            ? image
-            : TensorImage.createFrom(image, DataType.UINT8);
-
-    Rect roi =
-        options.getRoi().isEmpty()
-            ? new Rect(0, 0, imageUint8.getWidth(), imageUint8.getHeight())
-            : options.getRoi();
+    Rect roi = options.getRoi().isEmpty() ? new Rect(0, 0, width, height) : options.getRoi();
 
     return classifyNative(
         getNativeHandle(),
-        imageUint8.getBuffer(),
-        imageUint8.getWidth(),
-        imageUint8.getHeight(),
-        new int[] {roi.left, roi.top, roi.width(), roi.height()},
-        options.getOrientation().getValue());
+        frameBufferHandle,
+        new int[] {roi.left, roi.top, roi.width(), roi.height()});
   }
 
   private static native long initJniWithModelFdAndOptions(
@@ -312,16 +449,17 @@ public final class ImageClassifier extends BaseTaskApi {
       long fileDescriptorOffset,
       ImageClassifierOptions options);
 
+  private static native long initJniWithByteBuffer(
+      ByteBuffer modelBuffer, ImageClassifierOptions options);
+
   /**
    * The native method to classify an image with the ROI and orientation.
    *
    * @param roi the ROI of the input image, an array representing the bounding box as {left, top,
    *     width, height}
-   * @param orientation the integer value corresponding to {@link
-   *     ImageProcessingOptions#Orientation}
    */
   private static native List<Classifications> classifyNative(
-      long nativeHandle, ByteBuffer image, int width, int height, int[] roi, int orientation);
+      long nativeHandle, long frameBufferHandle, int[] roi);
 
   @Override
   protected void deinit(long nativeHandle) {

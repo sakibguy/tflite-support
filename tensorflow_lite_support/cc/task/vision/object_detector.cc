@@ -23,7 +23,6 @@ limitations under the License.
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "tensorflow/lite/c/common.h"
-#include "tensorflow/lite/interpreter.h"
 #include "tensorflow_lite_support/cc/common.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
 #include "tensorflow_lite_support/cc/task/core/task_api_factory.h"
@@ -259,10 +258,11 @@ StatusOr<std::unique_ptr<ObjectDetector>> ObjectDetector::CreateFromOptions(
   // Copy options to ensure the ExternalFile outlives the constructed object.
   auto options_copy = absl::make_unique<ObjectDetectorOptions>(options);
 
-  ASSIGN_OR_RETURN(auto object_detector,
-                   TaskAPIFactory::CreateFromExternalFileProto<ObjectDetector>(
-                       &options_copy->model_file_with_metadata(),
-                       std::move(resolver), options_copy->num_threads()));
+  ASSIGN_OR_RETURN(
+      auto object_detector,
+      TaskAPIFactory::CreateFromExternalFileProto<ObjectDetector>(
+          &options_copy->model_file_with_metadata(), std::move(resolver),
+          options_copy->num_threads(), options_copy->compute_settings()));
 
   RETURN_IF_ERROR(object_detector->Init(std::move(options_copy)));
 
@@ -438,9 +438,7 @@ StatusOr<DetectionResult> ObjectDetector::Detect(
   BoundingBox roi;
   roi.set_width(frame_buffer.dimension().width);
   roi.set_height(frame_buffer.dimension().height);
-  // Rely on `Infer` instead of `InferWithFallback` as DetectionPostprocessing
-  // op doesn't support hardware acceleration at the time.
-  return Infer(frame_buffer, roi);
+  return InferWithFallback(frame_buffer, roi);
 }
 
 StatusOr<DetectionResult> ObjectDetector::Postprocess(

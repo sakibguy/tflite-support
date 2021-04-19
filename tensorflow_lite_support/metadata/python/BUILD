@@ -23,11 +23,10 @@ py_library(
     srcs_version = "PY2AND3",
     visibility = ["//visibility:public"],
     deps = [
-        "//tensorflow_lite_support/custom_ops:expect_numpy_installed",
         "//tensorflow_lite_support/metadata:metadata_schema_py",
         "//tensorflow_lite_support/metadata:schema_py",
         "//tensorflow_lite_support/metadata/cc/python:_pywrap_metadata_version",
         "//tensorflow_lite_support/metadata/flatbuffers_lib:_pywrap_flatbuffers",
-        "//tensorflow_lite_support/tools:expect_flatbuffers_installed",
+        "@flatbuffers//:runtime_py",
     ],
 )

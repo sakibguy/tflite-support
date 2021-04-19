@@ -16,18 +16,22 @@ limitations under the License.
 package org.tensorflow.lite.task.vision.detector;
 
 import android.content.Context;
+import android.os.ParcelFileDescriptor;
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.annotations.UsedByReflection;
 import org.tensorflow.lite.support.image.TensorImage;
-import org.tensorflow.lite.task.core.BaseTaskApi;
 import org.tensorflow.lite.task.core.TaskJniUtils;
+import org.tensorflow.lite.task.core.TaskJniUtils.EmptyHandleProvider;
 import org.tensorflow.lite.task.core.TaskJniUtils.FdAndOptionsHandleProvider;
 import org.tensorflow.lite.task.core.vision.ImageProcessingOptions;
+import org.tensorflow.lite.task.vision.core.BaseVisionTaskApi;
+import org.tensorflow.lite.task.vision.core.BaseVisionTaskApi.InferenceProvider;
 
 /**
  * Performs object detection on images.
@@ -79,9 +83,11 @@ import org.tensorflow.lite.task.core.vision.ImageProcessingOptions;
  * href="https://tfhub.dev/google/lite-model/object_detection/mobile_object_localizer_v1/1/metadata/1">TensorFlow
  * Hub.</a>.
  */
-public final class ObjectDetector extends BaseTaskApi {
+public final class ObjectDetector extends BaseVisionTaskApi {
 
   private static final String OBJECT_DETECTOR_NATIVE_LIB = "task_vision_jni";
+  private static final int OPTIONAL_FD_LENGTH = -1;
+  private static final int OPTIONAL_FD_OFFSET = -1;
 
   /**
    * Creates an {@link ObjectDetector} instance from the default {@link ObjectDetectorOptions}.
@@ -94,6 +100,33 @@ public final class ObjectDetector extends BaseTaskApi {
   public static ObjectDetector createFromFile(Context context, String modelPath)
       throws IOException {
     return createFromFileAndOptions(context, modelPath, ObjectDetectorOptions.builder().build());
+  }
+
+  /**
+   * Creates an {@link ObjectDetector} instance from the default {@link ObjectDetectorOptions}.
+   *
+   * @param modelFile the detection model {@link File} instance
+   * @throws IOException if an I/O error occurs when loading the tflite model
+   * @throws AssertionError if error occurs when creating {@link ObjectDetector} from the native
+   *     code
+   */
+  public static ObjectDetector createFromFile(File modelFile) throws IOException {
+    return createFromFileAndOptions(modelFile, ObjectDetectorOptions.builder().build());
+  }
+
+  /**
+   * Creates an {@link ObjectDetector} instance with a model buffer and the default {@link
+   * ObjectDetectorOptions}.
+   *
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the detection
+   *     model
+   * @throws AssertionError if error occurs when creating {@link ObjectDetector} from the native
+   *     code
+   * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
+   *     {@link MappedByteBuffer}
+   */
+  public static ObjectDetector createFromBuffer(final ByteBuffer modelBuffer) {
+    return createFromBufferAndOptions(modelBuffer, ObjectDetectorOptions.builder().build());
   }
 
   /**
@@ -126,6 +159,62 @@ public final class ObjectDetector extends BaseTaskApi {
   }
 
   /**
+   * Creates an {@link ObjectDetector} instance from {@link ObjectDetectorOptions}.
+   *
+   * @param modelFile the detection model {@link File} instance
+   * @throws IOException if an I/O error occurs when loading the tflite model
+   * @throws AssertionError if error occurs when creating {@link ObjectDetector} from the native
+   *     code
+   */
+  public static ObjectDetector createFromFileAndOptions(
+      File modelFile, final ObjectDetectorOptions options) throws IOException {
+    try (ParcelFileDescriptor descriptor =
+        ParcelFileDescriptor.open(modelFile, ParcelFileDescriptor.MODE_READ_ONLY)) {
+      return new ObjectDetector(
+          TaskJniUtils.createHandleFromLibrary(
+              new TaskJniUtils.EmptyHandleProvider() {
+                @Override
+                public long createHandle() {
+                  return initJniWithModelFdAndOptions(
+                      descriptor.getFd(),
+                      /*fileDescriptorLength=*/ OPTIONAL_FD_LENGTH,
+                      /*fileDescriptorOffset=*/ OPTIONAL_FD_OFFSET,
+                      options);
+                }
+              },
+              OBJECT_DETECTOR_NATIVE_LIB));
+    }
+  }
+
+  /**
+   * Creates an {@link ObjectDetector} instance with a model buffer and {@link
+   * ObjectDetectorOptions}.
+   *
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the detection
+   *     model
+   * @throws AssertionError if error occurs when creating {@link ObjectDetector} from the native
+   *     code
+   * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
+   *     {@link MappedByteBuffer}
+   */
+  public static ObjectDetector createFromBufferAndOptions(
+      final ByteBuffer modelBuffer, final ObjectDetectorOptions options) {
+    if (!(modelBuffer.isDirect() || modelBuffer instanceof MappedByteBuffer)) {
+      throw new IllegalArgumentException(
+          "The model buffer should be either a direct ByteBuffer or a MappedByteBuffer.");
+    }
+    return new ObjectDetector(
+        TaskJniUtils.createHandleFromLibrary(
+            new EmptyHandleProvider() {
+              @Override
+              public long createHandle() {
+                return initJniWithByteBuffer(modelBuffer, options);
+              }
+            },
+            OBJECT_DETECTOR_NATIVE_LIB));
+  }
+
+  /**
    * Constructor to initialize the JNI with a pointer from C++.
    *
    * @param nativeHandle a pointer referencing memory allocated in C++
@@ -154,6 +243,7 @@ public final class ObjectDetector extends BaseTaskApi {
     // vulnerable.
     private final List<String> labelAllowList;
     private final List<String> labelDenyList;
+    private final int numThreads;
 
     public static Builder builder() {
       return new Builder();
@@ -167,6 +257,7 @@ public final class ObjectDetector extends BaseTaskApi {
       private boolean isScoreThresholdSet = false;
       private List<String> labelAllowList = new ArrayList<>();
       private List<String> labelDenyList = new ArrayList<>();
+      private int numThreads = -1;
 
       private Builder() {}
 
@@ -237,6 +328,18 @@ public final class ObjectDetector extends BaseTaskApi {
         return this;
       }
 
+      /**
+       * Sets the number of threads to be used for TFLite ops that support multi-threading when
+       * running inference with CPU. Defaults to -1.
+       *
+       * <p>numThreads should be greater than 0 or equal to -1. Setting numThreads to -1 has the
+       * effect to let TFLite runtime set the value.
+       */
+      public Builder setNumThreads(int numThreads) {
+        this.numThreads = numThreads;
+        return this;
+      }
+
       public ObjectDetectorOptions build() {
         return new ObjectDetectorOptions(this);
       }
@@ -272,6 +375,11 @@ public final class ObjectDetector extends BaseTaskApi {
       return new ArrayList<>(labelDenyList);
     }
 
+    @UsedByReflection("object_detector_jni.cc")
+    public int getNumThreads() {
+      return numThreads;
+    }
+
     private ObjectDetectorOptions(Builder builder) {
       displayNamesLocale = builder.displayNamesLocale;
       maxResults = builder.maxResults;
@@ -279,14 +387,26 @@ public final class ObjectDetector extends BaseTaskApi {
       isScoreThresholdSet = builder.isScoreThresholdSet;
       labelAllowList = builder.labelAllowList;
       labelDenyList = builder.labelDenyList;
+      numThreads = builder.numThreads;
     }
   }
 
   /**
    * Performs actual detection on the provided image.
    *
-   * @param image a {@link TensorImage} object that represents a RGB image
+   * <p>{@link ObjectDetector} supports the following {@link TensorImage} color space types:
+   *
+   * <ul>
+   *   <li>{@link ColorSpaceType#RGB}
+   *   <li>{@link ColorSpaceType#NV12}
+   *   <li>{@link ColorSpaceType#NV21}
+   *   <li>{@link ColorSpaceType#YV12}
+   *   <li>{@link ColorSpaceType#YV21}
+   * </ul>
+   *
+   * @param image a UINT8 {@link TensorImage} object that represents an RGB or YUV image
    * @throws AssertionError if error occurs when processing the image from the native code
+   * @throws IllegalArgumentException if the color space type of image is unsupported
    */
   public List<Detection> detect(TensorImage image) {
     return detect(image, ImageProcessingOptions.builder().build());
@@ -295,26 +415,40 @@ public final class ObjectDetector extends BaseTaskApi {
   /**
    * Performs actual detection on the provided image.
    *
-   * @param image a {@link TensorImage} object that represents a RGB image
+   * <p>{@link ObjectDetector} supports the following {@link TensorImage} color space types:
+   *
+   * <ul>
+   *   <li>{@link ColorSpaceType#RGB}
+   *   <li>{@link ColorSpaceType#NV12}
+   *   <li>{@link ColorSpaceType#NV21}
+   *   <li>{@link ColorSpaceType#YV12}
+   *   <li>{@link ColorSpaceType#YV21}
+   * </ul>
+   *
+   * @param image a UINT8 {@link TensorImage} object that represents an RGB or YUV image
    * @param options {@link ObjectDetector} only supports image rotation (through {@link
    *     ImageProcessingOptions#Builder#setOrientation}) currently. The orientation of an image
    *     defaults to {@link ImageProcessingOptions#Orientation#TOP_LEFT}.
    * @throws AssertionError if error occurs when processing the image from the native code
+   * @throws IllegalArgumentException if the color space type of image is unsupported
    */
   public List<Detection> detect(TensorImage image, ImageProcessingOptions options) {
+    return run(
+        new InferenceProvider<List<Detection>>() {
+          @Override
+          public List<Detection> run(
+              long frameBufferHandle, int width, int height, ImageProcessingOptions options) {
+            return detect(frameBufferHandle, options);
+          }
+        },
+        image,
+        options);
+  }
+
+  private List<Detection> detect(long frameBufferHandle, ImageProcessingOptions options) {
     checkNotClosed();
 
-    // object_detector_jni.cc expects an uint8 image. Convert image of other types into uint8.
-    TensorImage imageUint8 =
-        image.getDataType() == DataType.UINT8
-            ? image
-            : TensorImage.createFrom(image, DataType.UINT8);
-    return detectNative(
-        getNativeHandle(),
-        imageUint8.getBuffer(),
-        imageUint8.getWidth(),
-        imageUint8.getHeight(),
-        options.getOrientation().getValue());
+    return detectNative(getNativeHandle(), frameBufferHandle);
   }
 
   private static native long initJniWithModelFdAndOptions(
@@ -323,8 +457,10 @@ public final class ObjectDetector extends BaseTaskApi {
       long fileDescriptorOffset,
       ObjectDetectorOptions options);
 
-  private static native List<Detection> detectNative(
-      long nativeHandle, ByteBuffer image, int width, int height, int orientation);
+  private static native long initJniWithByteBuffer(
+      ByteBuffer modelBuffer, ObjectDetectorOptions options);
+
+  private static native List<Detection> detectNative(long nativeHandle, long frameBufferHandle);
 
   @Override
   protected void deinit(long nativeHandle) {

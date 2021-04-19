@@ -18,6 +18,7 @@ tflite_jni_binary(
     name = "libtask_vision_jni.so",
     srcs = [
         "object_detector_jni.cc",
+        "//tensorflow_lite_support/java/src/native/task/vision/core:base_vision_task_api_jni.cc",
     ],
     linkscript = "//tensorflow_lite_support/java:default_version_script.lds",
     deps = [
@@ -32,5 +33,6 @@ tflite_jni_binary(
         "//tensorflow_lite_support/java/jni",
         "//tensorflow_lite_support/java/src/native/task/vision:jni_utils",
         "@com_google_absl//absl/strings",
+        "@org_tensorflow//tensorflow/lite/kernels:deprecated_backends",
     ],
 )

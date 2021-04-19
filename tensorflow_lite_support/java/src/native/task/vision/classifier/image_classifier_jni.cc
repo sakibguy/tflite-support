@@ -31,7 +31,6 @@ limitations under the License.
 namespace {
 
 using ::tflite::support::StatusOr;
-using ::tflite::support::utils::GetMappedFileBuffer;
 using ::tflite::support::utils::kAssertionError;
 using ::tflite::support::utils::kInvalidPointer;
 using ::tflite::support::utils::StringListToVector;
@@ -40,7 +39,6 @@ using ::tflite::task::vision::BoundingBox;
 using ::tflite::task::vision::ClassificationResult;
 using ::tflite::task::vision::Classifications;
 using ::tflite::task::vision::ConvertToCategory;
-using ::tflite::task::vision::ConvertToFrameBufferOrientation;
 using ::tflite::task::vision::FrameBuffer;
 using ::tflite::task::vision::ImageClassifier;
 using ::tflite::task::vision::ImageClassifierOptions;
@@ -94,6 +92,11 @@ ImageClassifierOptions ConvertToProtoOptions(JNIEnv* env,
     proto_options.add_class_name_blacklist(class_name);
   }
 
+  jmethodID num_threads_id =
+      env->GetMethodID(java_options_class, "getNumThreads", "()I");
+  jint num_threads = env->CallIntMethod(java_options, num_threads_id);
+  proto_options.set_num_threads(num_threads);
+
   return proto_options;
 }
 
@@ -139,27 +142,10 @@ jobject ConvertToClassificationResults(JNIEnv* env,
   return classifications_list;
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_deinitJni(
-    JNIEnv* env, jobject thiz, jlong native_handle) {
-  delete reinterpret_cast<ImageClassifier*>(native_handle);
-}
-
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_initJniWithModelFdAndOptions(
-    JNIEnv* env, jclass thiz, jint file_descriptor,
-    jlong file_descriptor_length, jlong file_descriptor_offset,
-    jobject java_options) {
-  ImageClassifierOptions proto_options =
-      ConvertToProtoOptions(env, java_options);
-  auto file_descriptor_meta = proto_options.mutable_model_file_with_metadata()
-                                  ->mutable_file_descriptor_meta();
-  file_descriptor_meta->set_fd(file_descriptor);
-  file_descriptor_meta->set_length(file_descriptor_length);
-  file_descriptor_meta->set_offset(file_descriptor_offset);
-
+jlong CreateImageClassifierFromOptions(JNIEnv* env,
+                                       const ImageClassifierOptions& options) {
   StatusOr<std::unique_ptr<ImageClassifier>> image_classifier_or =
-      ImageClassifier::CreateFromOptions(proto_options);
+      ImageClassifier::CreateFromOptions(options);
   if (image_classifier_or.ok()) {
     // Deletion is handled at deinitJni time.
     return reinterpret_cast<jlong>(image_classifier_or->release());
@@ -171,16 +157,57 @@ Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_initJniWithModel
   }
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_deinitJni(
+    JNIEnv* env, jobject thiz, jlong native_handle) {
+  delete reinterpret_cast<ImageClassifier*>(native_handle);
+}
+
+// Creates an ImageClassifier instance from the model file descriptor.
+// file_descriptor_length and file_descriptor_offset are optional. Non-possitive
+// values will be ignored.
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_initJniWithModelFdAndOptions(
+    JNIEnv* env, jclass thiz, jint file_descriptor,
+    jlong file_descriptor_length, jlong file_descriptor_offset,
+    jobject java_options) {
+  ImageClassifierOptions proto_options =
+      ConvertToProtoOptions(env, java_options);
+  auto file_descriptor_meta = proto_options.mutable_model_file_with_metadata()
+                                  ->mutable_file_descriptor_meta();
+  file_descriptor_meta->set_fd(file_descriptor);
+  if (file_descriptor_length > 0) {
+    file_descriptor_meta->set_length(file_descriptor_length);
+  }
+  if (file_descriptor_offset > 0) {
+    file_descriptor_meta->set_offset(file_descriptor_offset);
+  }
+  return CreateImageClassifierFromOptions(env, proto_options);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_initJniWithByteBuffer(
+    JNIEnv* env, jclass thiz, jobject model_buffer, jobject java_options) {
+  ImageClassifierOptions proto_options =
+      ConvertToProtoOptions(env, java_options);
+  // External proto generated header does not overload `set_file_content` with
+  // string_view, therefore GetMappedFileBuffer does not apply here.
+  // Creating a std::string will cause one extra copying of data. Thus, the
+  // most efficient way here is to set file_content using char* and its size.
+  proto_options.mutable_model_file_with_metadata()->set_file_content(
+      static_cast<char*>(env->GetDirectBufferAddress(model_buffer)),
+      static_cast<size_t>(env->GetDirectBufferCapacity(model_buffer)));
+  return CreateImageClassifierFromOptions(env, proto_options);
+}
+
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_classifyNative(
-    JNIEnv* env, jclass thiz, jlong native_handle, jobject image_byte_buffer,
-    jint width, jint height, jintArray jroi, jint jorientation) {
+    JNIEnv* env, jclass thiz, jlong native_handle, jlong frame_buffer_handle,
+    jintArray jroi) {
   auto* classifier = reinterpret_cast<ImageClassifier*>(native_handle);
-  auto image = GetMappedFileBuffer(env, image_byte_buffer);
-  std::unique_ptr<FrameBuffer> frame_buffer = CreateFromRgbRawBuffer(
-      reinterpret_cast<const uint8*>(image.data()),
-      FrameBuffer::Dimension{width, height},
-      ConvertToFrameBufferOrientation(env, jorientation));
+  // frame_buffer will be deleted after inference is done in
+  // base_vision_api_jni.cc.
+  auto* frame_buffer = reinterpret_cast<FrameBuffer*>(frame_buffer_handle);
 
   int* roi_array = env->GetIntArrayElements(jroi, 0);
   BoundingBox roi;
