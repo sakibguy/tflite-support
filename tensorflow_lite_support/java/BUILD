@@ -29,6 +29,7 @@ android_library(
     manifest = "AndroidManifest.xml",
     deps = [
         "@com_google_auto_value",
+        "@maven//:androidx_annotation_annotation",
         "@org_checkerframework_qual",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite",
     ],
@@ -41,11 +42,14 @@ android_library(
     ),
     javacopts = JAVACOPTS,
     manifest = "AndroidManifest.xml",
+    # LINT.IfChange(dep)
     deps = [
         "@com_google_auto_value",
+        "@maven//:androidx_annotation_annotation",
         "@org_checkerframework_qual",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java",
     ],
+    # LINT.ThenChange(<INTERNAL>/release/build_support_pom.sh:dep)
 )
 
 # TODO(b/156482505): Remove this target.

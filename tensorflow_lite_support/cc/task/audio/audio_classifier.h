@@ -81,6 +81,9 @@ class AudioClassifier
   // metadata.
   tflite::support::StatusOr<AudioBuffer::AudioFormat> GetRequiredAudioFormat();
 
+  // Returns the required input buffer size in number of float elements.
+  int GetRequiredInputBufferSize() { return input_buffer_size_; }
+
  private:
   // Performs sanity checks on the provided AudioClassifierOptions.
   static absl::Status SanityCheckOptions(const AudioClassifierOptions& options);
@@ -91,6 +94,10 @@ class AudioClassifier
 
   // Sets up input audio format from the model metadata;
   absl::Status SetAudioFormatFromMetadata();
+
+  // Performs sanity checks on the model input dimension and sets the input
+  // buffer size accordingly.
+  absl::Status CheckAndSetInputs();
 
   // Performs sanity checks on the model outputs and extracts their metadata.
   absl::Status CheckAndSetOutputs();
@@ -134,8 +141,11 @@ class AudioClassifier
   // post-processing.
   ClassNameSet class_name_set_;
 
-  // Expect input audio format by the model.
+  // Expected input audio format by the model.
   AudioBuffer::AudioFormat audio_format_;
+
+  // Expected input audio buffer size in number of float elements.
+  int input_buffer_size_;
 };
 
 }  // namespace audio
