@@ -21,7 +21,7 @@ limitations under the License.
 #include "tensorflow_lite_support/cc/port/statusor.h"
 #include "tensorflow_lite_support/cc/task/audio/audio_classifier.h"
 #include "tensorflow_lite_support/cc/task/audio/core/audio_buffer.h"
-#include "tensorflow_lite_support/cc/task/audio/proto/audio_classifier_options.proto.h"
+#include "tensorflow_lite_support/cc/task/audio/proto/audio_classifier_options.pb.h"
 #include "tensorflow_lite_support/cc/task/audio/proto/class_proto_inc.h"
 #include "tensorflow_lite_support/cc/task/audio/proto/classifications_proto_inc.h"
 #include "tensorflow_lite_support/cc/utils/jni_utils.h"
@@ -160,7 +160,7 @@ AudioClassifierOptions ConvertToProtoOptions(JNIEnv* env,
   jobject allow_list = env->CallObjectMethod(java_options, allow_list_id);
   auto allow_list_vector = StringListToVector(env, allow_list);
   for (const auto& class_name : allow_list_vector) {
-    proto_options.add_class_name_whitelist(class_name);
+    proto_options.add_class_name_allowlist(class_name);
   }
 
   jmethodID deny_list_id = env->GetMethodID(
@@ -168,7 +168,7 @@ AudioClassifierOptions ConvertToProtoOptions(JNIEnv* env,
   jobject deny_list = env->CallObjectMethod(java_options, deny_list_id);
   auto deny_list_vector = StringListToVector(env, deny_list);
   for (const auto& class_name : deny_list_vector) {
-    proto_options.add_class_name_blacklist(class_name);
+    proto_options.add_class_name_denylist(class_name);
   }
 
   return proto_options;
