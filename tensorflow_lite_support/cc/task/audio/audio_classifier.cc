@@ -134,14 +134,6 @@ absl::Status AudioClassifier::SanityCheckOptions(
         "Invalid `max_results` option: value must be != 0",
         TfLiteSupportStatus::kInvalidArgumentError);
   }
-  if (options.score_threshold() < 0 || options.score_threshold() >= 1) {
-    return CreateStatusWithPayload(
-        StatusCode::kInvalidArgument,
-        absl::StrFormat(
-            "`score_threshold` out of range: %f. Valid range is [0,1[.",
-            options.score_threshold()),
-        TfLiteSupportStatus::kInvalidArgumentError);
-  }
   if (options.class_name_allowlist_size() > 0 &&
       options.class_name_denylist_size() > 0) {
     return CreateStatusWithPayload(
@@ -369,6 +361,14 @@ absl::Status AudioClassifier::Preprocess(
                         "the model required audio channel number %d.",
                         audio_buffer.GetAudioFormat().channels,
                         audio_format_.channels));
+  }
+  if (audio_buffer.GetAudioFormat().sample_rate != audio_format_.sample_rate) {
+    return tflite::support::CreateStatusWithPayload(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrFormat("Input audio sample rate %d does not match "
+                        "the model required audio sample rate %d.",
+                        audio_buffer.GetAudioFormat().sample_rate,
+                        audio_format_.sample_rate));
   }
   if (audio_buffer.GetBufferSize() != input_buffer_size_) {
     return tflite::support::CreateStatusWithPayload(

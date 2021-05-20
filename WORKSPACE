@@ -1,8 +1,15 @@
 workspace(name = "org_tensorflow_lite_support")
 
 load("@bazel_tools//tools/build_defs/repo:java.bzl", "java_import_external")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@//third_party/py:python_configure.bzl", "python_configure")
+
+http_file(
+    name = "mobilebert_float",
+    sha256 = "883bf5d40f0b0ae435326bb21ed0f4c9004b22c3fd1539383fd16d68623696dd",
+    urls = ["https://tfhub.dev/tensorflow/lite-model/mobilebert/1/default/1?lite-format=tflite"],
+)
+
 
 http_archive(
     name = "io_bazel_rules_closure",
@@ -37,9 +44,9 @@ http_archive(
     ],
 )
 
-# TF on 2021-04-21.
-TENSORFLOW_COMMIT = "e30740d6d4c16f81c10d21d6bc0d4dbcfcb13838"
-TENSORFLOW_SHA256 = "4d1ce027afdb1a3cdb9bcf2a5df5337b089f369077707954e8f5552df998293c"
+# TF on 2021-05-20.
+TENSORFLOW_COMMIT = "5497a509e4f6bb9ead686b113fca53183f421565"
+TENSORFLOW_SHA256 = "aa01329bbd5262cd4e8e51085a27de3dc848ecc1b8c2b4045915b38459b00642"
 # These values come from tensorflow/workspace3.bzl. If the TF commit is updated,
 # these should be updated to match.
 IO_BAZEL_RULES_CLOSURE_COMMIT = "308b05b2419edb5c8ee0471b67a40403df940149"
