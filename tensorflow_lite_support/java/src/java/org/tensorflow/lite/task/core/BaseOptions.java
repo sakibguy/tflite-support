@@ -20,6 +20,7 @@ import com.google.auto.value.AutoValue;
 /** Options to configure Task APIs in general. */
 @AutoValue
 public abstract class BaseOptions {
+  private static final int DEFAULT_NUM_THREADS = -1;
 
   /** Builder for {@link BaseOptions}. */
   @AutoValue.Builder
@@ -29,9 +30,18 @@ public abstract class BaseOptions {
      * Sets the advanced accelerator options.
      *
      * <p>Note: this method will override those highlevel API to choose an delegate, such as {@link
-     * useGpu} and {@link useNnapi}.
+     * #useGpu} and {@link #useNnapi}.
      */
     public abstract Builder setComputeSettings(ComputeSettings computeSettings);
+
+    /**
+     * Sets the number of threads to be used for TFLite ops that support multi-threading when
+     * running inference with CPU. Defaults to -1.
+     *
+     * <p>{@code numThreads} should be greater than 0 or equal to -1. Setting numThreads to -1 has
+     * the effect to let TFLite runtime set the value.
+     */
+    public abstract Builder setNumThreads(int numThreads);
 
     /**
      * Uses GPU for inference. The advanced GPU configuration settings will be set to default
@@ -64,8 +74,11 @@ public abstract class BaseOptions {
 
   public static Builder builder() {
     return new AutoValue_BaseOptions.Builder()
-        .setComputeSettings(ComputeSettings.builder().build());
+        .setComputeSettings(ComputeSettings.builder().build())
+        .setNumThreads(DEFAULT_NUM_THREADS);
   }
 
-  public abstract ComputeSettings getComputeSettings();
+  abstract ComputeSettings getComputeSettings();
+
+  abstract int getNumThreads();
 }

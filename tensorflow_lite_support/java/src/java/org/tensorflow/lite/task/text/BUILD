@@ -25,6 +25,7 @@ android_library_with_tflite(
         "//tensorflow_lite_support/java:tensorflowlite_support_java",
         "//tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/core:base_task_api",
         "@com_google_auto_value",
+        "@maven//:androidx_annotation_annotation",
         "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java",
     ],
     # LINT.ThenChange(<INTERNAL>/release/build_task_pom.sh:dep)
@@ -37,4 +38,10 @@ android_library_with_tflite(
 aar_with_jni(
     name = "task-library-text",
     android_library = ":task_library_text",
+    headers = [
+        "//tensorflow_lite_support/c/task/text:bert_nl_classifier.h",
+        "//tensorflow_lite_support/c/task/text:nl_classifier.h",
+        "//tensorflow_lite_support/c/task/text:nl_classifier_common.h",
+        "//tensorflow_lite_support/c/task/text:bert_question_answerer.h",
+    ],
 )

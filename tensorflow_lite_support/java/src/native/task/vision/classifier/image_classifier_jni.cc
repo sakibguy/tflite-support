@@ -32,7 +32,7 @@ limitations under the License.
 namespace {
 
 using ::tflite::support::StatusOr;
-using ::tflite::support::utils::kAssertionError;
+using ::tflite::support::utils::GetExceptionClassNameForStatusCode;
 using ::tflite::support::utils::kInvalidPointer;
 using ::tflite::support::utils::StringListToVector;
 using ::tflite::support::utils::ThrowException;
@@ -104,8 +104,16 @@ ImageClassifierOptions ConvertToProtoOptions(JNIEnv* env, jobject java_options,
   jmethodID num_threads_id =
       env->GetMethodID(java_options_class, "getNumThreads", "()I");
   jint num_threads = env->CallIntMethod(java_options, num_threads_id);
-  proto_options.set_num_threads(num_threads);
-
+  // Use base_options to configure num_threads, because image_classifier is
+  // created using base_options in initJniWithModelFdAndOptions and
+  // initJniWithByteBuffer.
+  if (num_threads != -1) {
+    proto_options.mutable_base_options()
+        ->mutable_compute_settings()
+        ->mutable_tflite_settings()
+        ->mutable_cpu_settings()
+        ->set_num_threads(num_threads);
+  }
   return proto_options;
 }
 
@@ -159,9 +167,11 @@ jlong CreateImageClassifierFromOptions(JNIEnv* env,
     // Deletion is handled at deinitJni time.
     return reinterpret_cast<jlong>(image_classifier_or->release());
   } else {
-    ThrowException(env, kAssertionError,
-                   "Error occurred when initializing ImageClassifier: %s",
-                   image_classifier_or.status().message().data());
+    ThrowException(
+        env,
+        GetExceptionClassNameForStatusCode(image_classifier_or.status().code()),
+        "Error occurred when initializing ImageClassifier: %s",
+        image_classifier_or.status().message().data());
     return kInvalidPointer;
   }
 }
@@ -234,9 +244,10 @@ Java_org_tensorflow_lite_task_vision_classifier_ImageClassifier_classifyNative(
   if (results_or.ok()) {
     return ConvertToClassificationResults(env, results_or.value());
   } else {
-    ThrowException(env, kAssertionError,
-                   "Error occurred when classifying the image: %s",
-                   results_or.status().message().data());
+    ThrowException(
+        env, GetExceptionClassNameForStatusCode(results_or.status().code()),
+        "Error occurred when classifying the image: %s",
+        results_or.status().message().data());
     return nullptr;
   }
 }
