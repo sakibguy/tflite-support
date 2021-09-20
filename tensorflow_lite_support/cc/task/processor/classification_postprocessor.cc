@@ -17,8 +17,8 @@ limitations under the License.
 
 #include <memory>
 
-#include "absl/status/status.h"
-#include "absl/strings/str_format.h"
+#include "external/com_google_absl/absl/status/status.h"
+#include "external/com_google_absl/absl/strings/str_format.h"
 #include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
 #include "tensorflow_lite_support/cc/task/core/label_map_item.h"
@@ -38,6 +38,21 @@ using ::tflite::task::core::LabelMapItem;
 using ::tflite::task::core::ScoreCalibration;
 
 }  // namespace
+
+/* static */
+absl::StatusOr<std::unique_ptr<ClassificationPostprocessor>>
+ClassificationPostprocessor::Create(
+    core::TfLiteEngine* engine, const std::initializer_list<int> output_indices,
+    std::unique_ptr<ClassificationOptions> options) {
+  RETURN_IF_ERROR(Postprocessor::SanityCheck(/* num_expected_tensors = */ 1,
+                                             engine, output_indices));
+
+  auto processor =
+      absl::WrapUnique(new ClassificationPostprocessor(engine, output_indices));
+
+  RETURN_IF_ERROR(processor->Init(std::move(options)));
+  return processor;
+}
 
 absl::Status ClassificationPostprocessor::Init(
     std::unique_ptr<ClassificationOptions> options) {

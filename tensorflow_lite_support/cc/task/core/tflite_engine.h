@@ -20,9 +20,9 @@ limitations under the License.
 
 #include <memory>
 
-#include "absl/memory/memory.h"
-#include "absl/status/status.h"
-#include "absl/strings/string_view.h"
+#include "external/com_google_absl/absl/memory/memory.h"
+#include "external/com_google_absl/absl/status/status.h"
+#include "external/com_google_absl/absl/strings/string_view.h"
 #include "tensorflow/lite/core/api/op_resolver.h"
 #include "tensorflow/lite/core/shims/c/common.h"
 #include "tensorflow/lite/core/shims/cc/interpreter.h"

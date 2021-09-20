@@ -17,7 +17,7 @@ limitations under the License.
 
 #include <initializer_list>
 
-#include "absl/memory/memory.h"
+#include "external/com_google_absl/absl/memory/memory.h"
 #include "tensorflow_lite_support/cc/port/status_macros.h"
 #include "tensorflow_lite_support/cc/port/statusor.h"
 #include "tensorflow_lite_support/cc/task/audio/core/audio_buffer.h"
@@ -40,15 +40,7 @@ class AudioPreprocessor : public Preprocessor {
  public:
   static tflite::support::StatusOr<std::unique_ptr<AudioPreprocessor>> Create(
       tflite::task::core::TfLiteEngine* engine,
-      const std::initializer_list<int> input_indices) {
-    RETURN_IF_ERROR(Preprocessor::SanityCheck(/* num_expected_tensors = */ 1,
-                                              engine, input_indices,
-                                              /* requires_metadata = */ true));
-    auto processor =
-        ::absl::WrapUnique(new AudioPreprocessor(engine, input_indices));
-    RETURN_IF_ERROR(processor->Init());
-    return processor;
-  }
+      const std::initializer_list<int> input_indices);
 
   // Processes the provided AudioBuffer and populates tensor values.
   //

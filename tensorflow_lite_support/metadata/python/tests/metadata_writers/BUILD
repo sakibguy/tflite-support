@@ -14,7 +14,7 @@ py_library(
     srcs = [
         "test_utils.py",
     ],
-    visibility = ["//tensorflow_lite_support/metadata/python/tests/metadata_writers:__subpackages__"],
+    visibility = ["//tensorflow_lite_support/metadata/python/tests:__subpackages__"],
 )
 
 py_test(
@@ -97,6 +97,8 @@ py_test(
     deps = [
         ":test_utils",
         # build rule placeholder: tensorflow dep,
+        "//tensorflow_lite_support/metadata:metadata_schema_py",
+        "//tensorflow_lite_support/metadata/python/metadata_writers:metadata_info",
         "//tensorflow_lite_support/metadata/python/metadata_writers:object_detector",
         "@absl_py//absl/testing:parameterized",
         "@flatbuffers//:runtime_py",
@@ -146,6 +148,5 @@ py_test(
         "//tensorflow_lite_support/metadata/python/metadata_writers:audio_classifier",
         "//tensorflow_lite_support/metadata/python/metadata_writers:metadata_info",
         "@absl_py//absl/testing:parameterized",
-        "@flatbuffers//:runtime_py",
     ],
 )

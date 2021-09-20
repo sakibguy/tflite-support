@@ -14,8 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow_lite_support/cc/task/processor/audio_preprocessor.h"
 
-#include "absl/status/status.h"
-#include "absl/strings/str_format.h"
+#include "external/com_google_absl/absl/status/status.h"
+#include "external/com_google_absl/absl/strings/str_format.h"
 #include "tensorflow_lite_support/cc/common.h"
 #include "tensorflow_lite_support/cc/port/statusor.h"
 #include "tensorflow_lite_support/cc/task/audio/core/audio_buffer.h"
@@ -69,6 +69,19 @@ tflite::support::StatusOr<const AudioProperties*> GetAudioPropertiesSafe(
   return props;
 }
 }  // namespace
+
+/* static */
+tflite::support::StatusOr<std::unique_ptr<AudioPreprocessor>>
+AudioPreprocessor::Create(tflite::task::core::TfLiteEngine* engine,
+                          const std::initializer_list<int> input_indices) {
+  RETURN_IF_ERROR(Preprocessor::SanityCheck(/* num_expected_tensors = */ 1,
+                                            engine, input_indices,
+                                            /* requires_metadata = */ true));
+  auto processor =
+      ::absl::WrapUnique(new AudioPreprocessor(engine, input_indices));
+  RETURN_IF_ERROR(processor->Init());
+  return processor;
+}
 
 absl::Status AudioPreprocessor::Init() {
   RETURN_IF_ERROR(SetAudioFormatFromMetadata());

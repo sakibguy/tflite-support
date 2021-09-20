@@ -17,8 +17,8 @@ limitations under the License.
 
 #include <memory>
 
-#include "absl/flags/flag.h"
-#include "absl/status/status.h"
+#include "external/com_google_absl/absl/flags/flag.h"
+#include "external/com_google_absl/absl/status/status.h"
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/core/shims/cc/shims_test_util.h"
 #include "tensorflow/lite/kernels/builtin_op_kernels.h"

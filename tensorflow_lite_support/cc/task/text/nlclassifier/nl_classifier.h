@@ -23,8 +23,8 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "absl/base/macros.h"
-#include "absl/status/status.h"
+#include "external/com_google_absl/absl/base/macros.h"
+#include "external/com_google_absl/absl/status/status.h"
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
 #include "tensorflow/lite/c/common.h"
 #include "tensorflow/lite/core/api/op_resolver.h"
