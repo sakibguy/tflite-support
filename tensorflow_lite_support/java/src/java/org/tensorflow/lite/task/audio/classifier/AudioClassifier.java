@@ -15,7 +15,7 @@ limitations under the License.
 
 package org.tensorflow.lite.task.audio.classifier;
 
-import static org.tensorflow.lite.support.common.SupportPreconditions.checkState;
+import static org.tensorflow.lite.support.common.internal.SupportPreconditions.checkState;
 
 import android.content.Context;
 import android.media.AudioFormat;
@@ -34,6 +34,7 @@ import org.tensorflow.lite.annotations.UsedByReflection;
 import org.tensorflow.lite.support.audio.TensorAudio;
 import org.tensorflow.lite.support.audio.TensorAudio.TensorAudioFormat;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
+import org.tensorflow.lite.task.core.BaseOptions;
 import org.tensorflow.lite.task.core.BaseTaskApi;
 import org.tensorflow.lite.task.core.TaskJniUtils;
 import org.tensorflow.lite.task.core.TaskJniUtils.EmptyHandleProvider;
@@ -64,8 +65,12 @@ import org.tensorflow.lite.task.core.TaskJniUtils.FdAndOptionsHandleProvider;
  *             use index as label in the result.
  *       </ul>
  * </ul>
+ *
+ * See <a href="https://tfhub.dev/google/lite-model/yamnet/classification/tflite/1">an example</a>
+ * of such model, and <a
+ * href="https://github.com/tensorflow/tflite-support/tree/master/tensorflow_lite_support/examples/task/audio/desktop">a
+ * CLI demo tool</a> for easily trying out this API.
  */
-// TODO(b/182535933): Add a model example and demo comments here.
 public final class AudioClassifier extends BaseTaskApi {
 
   private static final String AUDIO_CLASSIFIER_NATIVE_LIB = "task_audio_jni";
@@ -77,8 +82,9 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelPath path of the classification model with metadata in the assets
    * @throws IOException if an I/O error occurs when loading the tflite model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static AudioClassifier createFromFile(Context context, String modelPath)
       throws IOException {
@@ -90,8 +96,9 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelFile the classification model {@link File} instance
    * @throws IOException if an I/O error occurs when loading the tflite model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static AudioClassifier createFromFile(File modelFile) throws IOException {
     return createFromFileAndOptions(modelFile, AudioClassifierOptions.builder().build());
@@ -103,8 +110,8 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the
    *     classification model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
    *     {@link MappedByteBuffer}
    */
@@ -117,8 +124,9 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelPath path of the classification model with metadata in the assets
    * @throws IOException if an I/O error occurs when loading the tflite model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static AudioClassifier createFromFileAndOptions(
       Context context, String modelPath, AudioClassifierOptions options) throws IOException {
@@ -133,7 +141,11 @@ public final class AudioClassifier extends BaseTaskApi {
                   long fileDescriptorOffset,
                   AudioClassifierOptions options) {
                 return initJniWithModelFdAndOptions(
-                    fileDescriptor, fileDescriptorLength, fileDescriptorOffset, options);
+                    fileDescriptor,
+                    fileDescriptorLength,
+                    fileDescriptorOffset,
+                    options,
+                    TaskJniUtils.createProtoBaseOptionsHandle(options.getBaseOptions()));
               }
             },
             AUDIO_CLASSIFIER_NATIVE_LIB,
@@ -146,8 +158,9 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelFile the classification model {@link File} instance
    * @throws IOException if an I/O error occurs when loading the tflite model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static AudioClassifier createFromFileAndOptions(
       File modelFile, final AudioClassifierOptions options) throws IOException {
@@ -162,7 +175,8 @@ public final class AudioClassifier extends BaseTaskApi {
                       descriptor.getFd(),
                       /*fileDescriptorLength=*/ OPTIONAL_FD_LENGTH,
                       /*fileDescriptorOffset=*/ OPTIONAL_FD_OFFSET,
-                      options);
+                      options,
+                      TaskJniUtils.createProtoBaseOptionsHandle(options.getBaseOptions()));
                 }
               },
               AUDIO_CLASSIFIER_NATIVE_LIB));
@@ -175,8 +189,8 @@ public final class AudioClassifier extends BaseTaskApi {
    *
    * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the
    *     classification model
-   * @throws AssertionError if error occurs when creating {@link AudioClassifier} from the native
-   *     code
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
    *     {@link MappedByteBuffer}
    */
@@ -191,7 +205,10 @@ public final class AudioClassifier extends BaseTaskApi {
             new EmptyHandleProvider() {
               @Override
               public long createHandle() {
-                return initJniWithByteBuffer(modelBuffer, options);
+                return initJniWithByteBuffer(
+                    modelBuffer,
+                    options,
+                    TaskJniUtils.createProtoBaseOptionsHandle(options.getBaseOptions()));
               }
             },
             AUDIO_CLASSIFIER_NATIVE_LIB));
@@ -215,6 +232,7 @@ public final class AudioClassifier extends BaseTaskApi {
     // 1. java.util.Optional require Java 8 while we need to support Java 7.
     // 2. The Guava library (com.google.common.base.Optional) is avoided in this project. See the
     // comments for labelAllowList.
+    private final BaseOptions baseOptions;
     private final String displayNamesLocale;
     private final int maxResults;
     private final float scoreThreshold;
@@ -233,6 +251,7 @@ public final class AudioClassifier extends BaseTaskApi {
 
     /** A builder that helps to configure an instance of AudioClassifierOptions. */
     public static class Builder {
+      private BaseOptions baseOptions = BaseOptions.builder().build();
       private String displayNamesLocale = "en";
       private int maxResults = -1;
       private float scoreThreshold;
@@ -241,6 +260,12 @@ public final class AudioClassifier extends BaseTaskApi {
       private List<String> labelDenyList = new ArrayList<>();
 
       private Builder() {}
+
+      /** Sets the general options to configure Task APIs, such as accelerators. */
+      public Builder setBaseOptions(BaseOptions baseOptions) {
+        this.baseOptions = baseOptions;
+        return this;
+      }
 
       /**
        * Sets the locale to use for display names specified through the TFLite Model Metadata, if
@@ -339,6 +364,10 @@ public final class AudioClassifier extends BaseTaskApi {
       return new ArrayList<>(labelDenyList);
     }
 
+    public BaseOptions getBaseOptions() {
+      return baseOptions;
+    }
+
     private AudioClassifierOptions(Builder builder) {
       displayNamesLocale = builder.displayNamesLocale;
       maxResults = builder.maxResults;
@@ -346,6 +375,7 @@ public final class AudioClassifier extends BaseTaskApi {
       isScoreThresholdSet = builder.isScoreThresholdSet;
       labelAllowList = builder.labelAllowList;
       labelDenyList = builder.labelDenyList;
+      baseOptions = builder.baseOptions;
     }
   }
 
@@ -356,7 +386,9 @@ public final class AudioClassifier extends BaseTaskApi {
    *     between [-1, 1). The {@code tensor} argument should have the same flat size as the TFLite
    *     model's input tensor. It's recommended to create {@code tensor} using {@code
    *     createInputTensorAudio} method.
-   * @throws AssertionError if error occurs when classifying the audio clip from the native code
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if error occurs when classifying the audio clip from the native
+   *     code
    */
   public List<Classifications> classify(TensorAudio tensor) {
     TensorBuffer buffer = tensor.getTensorBuffer();
@@ -450,11 +482,7 @@ public final class AudioClassifier extends BaseTaskApi {
     return audioRecord;
   }
 
-  /**
-   * Returns the {@link TensorAudioFormat} required by the model.
-   *
-   * @throws AssertionError if error occurs when invoking the native code
-   */
+  /** Returns the {@link TensorAudioFormat} required by the model. */
   public TensorAudioFormat getRequiredTensorAudioFormat() {
     return TensorAudioFormat.builder()
         .setChannels(getRequiredChannels())
@@ -485,10 +513,11 @@ public final class AudioClassifier extends BaseTaskApi {
       int fileDescriptor,
       long fileDescriptorLength,
       long fileDescriptorOffset,
-      AudioClassifierOptions options);
+      AudioClassifierOptions options,
+      long baseOptionsHandle);
 
   private static native long initJniWithByteBuffer(
-      ByteBuffer modelBuffer, AudioClassifierOptions options);
+      ByteBuffer modelBuffer, AudioClassifierOptions options, long baseOptionsHandle);
 
   /**
    * Releases memory pointed by {@code nativeHandle}, namely a C++ `AudioClassifier` instance.

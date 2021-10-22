@@ -11,7 +11,7 @@ cc_library(
         "statusor.h",
     ],
     deps = [
-        "//tensorflow_lite_support/cc/port/default:statusor",
+        "@com_google_absl//absl/status:statusor",
     ],
 )
 
@@ -54,5 +54,15 @@ cc_library(
     deps = [
         "//tensorflow_lite_support/cc/port/default:status_matchers",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "proto2",
+    hdrs = [
+        "proto2.h",
+    ],
+    deps = [
+        "@com_google_protobuf//:protobuf",
     ],
 )

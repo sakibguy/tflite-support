@@ -22,7 +22,7 @@ limitations under the License.
 #include "tensorflow_lite_support/cc/port/statusor.h"
 #include "tensorflow_lite_support/cc/task/core/tflite_engine.h"
 #include "tensorflow_lite_support/cc/task/processor/processor.h"
-#include "tensorflow_lite_support/cc/task/processor/proto/embedding_options.proto.h"
+#include "tensorflow_lite_support/cc/task/processor/proto/embedding_options.pb.h"
 
 namespace tflite {
 namespace task {
@@ -35,10 +35,10 @@ namespace processor {
 //    - Either 2 or 4 dimensions, i.e. `[1 x N]` or `[1 x 1 x 1 x N]`.
 class EmbeddingPostprocessor : public Postprocessor {
  public:
-  static absl::StatusOr<std::unique_ptr<EmbeddingPostprocessor>> Create(
-      core::TfLiteEngine* engine,
-      const std::initializer_list<int> output_indices,
-      std::unique_ptr<EmbeddingOptions> options);
+  static tflite::support::StatusOr<std::unique_ptr<EmbeddingPostprocessor>>
+  Create(core::TfLiteEngine* engine,
+         const std::initializer_list<int> output_indices,
+         std::unique_ptr<EmbeddingOptions> options);
 
   template <typename T>
   absl::Status Postprocess(T* embedding);

@@ -14,6 +14,7 @@
 # ==============================================================================
 """Helper classes for common model metadata information."""
 
+import csv
 import os
 from typing import Optional, List, Type
 
@@ -273,10 +274,27 @@ class ScoreCalibrationMd:
       file_path: file_path of the score calibration file [1].
       [1]:
         https://github.com/tensorflow/tflite-support/blob/5e0cdf5460788c481f5cd18aab8728ec36cf9733/tensorflow_lite_support/metadata/metadata_schema.fbs#L122
+
+    Raises:
+      ValueError: if the score_calibration file is malformed.
     """
     self._score_transformation_type = score_transformation_type
     self._default_score = default_score
     self._file_path = file_path
+
+    # Sanity check the score calibration file.
+    with open(self._file_path) as calibration_file:
+      csv_reader = csv.reader(calibration_file, delimiter=",")
+      for row in csv_reader:
+        if row and len(row) != 3 and len(row) != 4:
+          raise ValueError(
+              f"Expected empty lines or 3 or 4 parameters per line in score"
+              f" calibration file, but got {len(row)}.")
+
+        if row and float(row[0]) < 0:
+          raise ValueError(
+              f"Expected scale to be a non-negative value, but got "
+              f"{float(row[0])}.")
 
   def create_metadata(self) -> _metadata_fb.ProcessUnitT:
     """Creates the score calibration metadata based on the information.
@@ -421,11 +439,9 @@ class InputImageTensorMd(TensorMd):
       ValueError: if norm_mean and norm_std have different dimensions.
     """
     if norm_std and norm_mean and len(norm_std) != len(norm_mean):
-      # TODO(b/175843689): Python version cannot be specified in Kokoro bazel
-      # test
       raise ValueError(
-          "norm_mean and norm_std are expected to be the same dim. But got " +
-          "{} and {}".format(len(norm_mean), len(norm_std)))
+          f"norm_mean and norm_std are expected to be the same dim. But got "
+          f"{len(norm_mean)} and {len(norm_std)}")
 
     if tensor_type is _schema_fb.TensorType.UINT8:
       min_values = [_MIN_UINT8]
@@ -512,8 +528,8 @@ class InputTextTensorMd(TensorMd):
     """
     if not isinstance(self.tokenizer_md, (type(None), RegexTokenizerMd)):
       raise ValueError(
-          "The type of tokenizer_options, {}, is unsupported".format(
-              type(self.tokenizer_md)))
+          f"The type of tokenizer_options, {type(self.tokenizer_md)}, is "
+          f"unsupported")
 
     tensor_metadata = super().create_metadata()
     if self.tokenizer_md:
@@ -561,12 +577,12 @@ class InputAudioTensorMd(TensorMd):
     """
     # 0 is the default value in Flatbuffers.
     if self.sample_rate < 0:
-      raise ValueError("sample_rate should be non-negative, but got {}.".format(
-          self.sample_rate))
+      raise ValueError(
+          f"sample_rate should be non-negative, but got {self.sample_rate}.")
 
     if self.channels < 0:
-      raise ValueError("channels should be non-negative, but got {}.".format(
-          self.channels))
+      raise ValueError(
+          f"channels should be non-negative, but got {self.channels}.")
 
     tensor_metadata = super().create_metadata()
     properties = tensor_metadata.content.contentProperties

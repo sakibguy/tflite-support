@@ -28,6 +28,7 @@ strip_c_api_include_path_prefix(
         "//tensorflow_lite_support/c/task/processor:classification_result.h",
         "//tensorflow_lite_support/c/task/processor:classification_options.h",
         "//tensorflow_lite_support/c/task/core:base_options.h",
+        "//tensorflow_lite_support/c:common.h",
     ],
 )
 
@@ -67,6 +68,7 @@ tflite_ios_framework(
         ":bounding_box.h",
         ":classification_options.h",
         ":classification_result.h",
+        ":common.h",
         ":frame_buffer.h",
         ":image_classifier.h",
     ],
@@ -75,5 +77,16 @@ tflite_ios_framework(
     minimum_os_version = TFL_MINIMUM_OS_VERSION,
     deps = [
         "//tensorflow_lite_support/c/task/vision:image_classifier",
+    ],
+)
+
+objc_library(
+    name = "TFLCommon",
+    hdrs = [
+        "Sources/TFLCommon.h",
+    ],
+    module_name = "TFLCommon",
+    visibility = [
+        "//tensorflow_lite_support:__subpackages__",
     ],
 )

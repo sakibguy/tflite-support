@@ -25,6 +25,7 @@ import java.nio.MappedByteBuffer;
 import java.util.List;
 import org.tensorflow.lite.annotations.UsedByReflection;
 import org.tensorflow.lite.support.label.Category;
+import org.tensorflow.lite.task.core.BaseOptions;
 import org.tensorflow.lite.task.core.BaseTaskApi;
 import org.tensorflow.lite.task.core.TaskJniUtils;
 import org.tensorflow.lite.task.core.TaskJniUtils.EmptyHandleProvider;
@@ -45,6 +46,8 @@ import org.tensorflow.lite.task.core.TaskJniUtils.EmptyHandleProvider;
  */
 public class BertNLClassifier extends BaseTaskApi {
 
+  private static final String BERT_NL_CLASSIFIER_NATIVE_LIBNAME = "task_text_jni";
+
   /** Options to configure BertNLClassifier. */
   @AutoValue
   @UsedByReflection("bert_nl_classifier_jni.cc")
@@ -54,29 +57,25 @@ public class BertNLClassifier extends BaseTaskApi {
     @UsedByReflection("bert_nl_classifier_jni.cc")
     abstract int getMaxSeqLen();
 
-    public static BertNLClassifierOptions.Builder builder() {
+    abstract BaseOptions getBaseOptions();
+
+    public static Builder builder() {
       return new AutoValue_BertNLClassifier_BertNLClassifierOptions.Builder()
-          .setMaxSeqLen(DEFAULT_MAX_SEQ_LEN);
+          .setMaxSeqLen(DEFAULT_MAX_SEQ_LEN)
+          .setBaseOptions(BaseOptions.builder().build());
     }
 
     /** Builder for {@link BertNLClassifierOptions}. */
     @AutoValue.Builder
     public abstract static class Builder {
-      public abstract BertNLClassifierOptions.Builder setMaxSeqLen(int value);
+
+      /** Sets the general options to configure Task APIs, such as accelerators. */
+      public abstract Builder setBaseOptions(BaseOptions baseOptions);
+
+      public abstract Builder setMaxSeqLen(int value);
 
       public abstract BertNLClassifierOptions build();
     }
-  }
-
-  private static final String BERT_NL_CLASSIFIER_NATIVE_LIBNAME = "task_text_jni";
-
-  /**
-   * Constructor to initialize the JNI with a pointer from C++.
-   *
-   * @param nativeHandle a pointer referencing memory allocated in C++.
-   */
-  private BertNLClassifier(long nativeHandle) {
-    super(nativeHandle);
   }
 
   /**
@@ -84,22 +83,28 @@ public class BertNLClassifier extends BaseTaskApi {
    * BertNLClassifierOptions}.
    *
    * @param context Android context
-   * @param pathToModel Path to the classification model.
-   * @return {@link BertNLClassifier} instance.
-   * @throws IOException If model file fails to load.
+   * @param modelPath Path to the classification model
+   * @return a {@link BertNLClassifier} instance
+   * @throws IOException If model file fails to load
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
-  public static BertNLClassifier createFromFile(final Context context, final String pathToModel)
+  public static BertNLClassifier createFromFile(final Context context, final String modelPath)
       throws IOException {
-    return createFromBuffer(TaskJniUtils.loadMappedFile(context, pathToModel));
+    return createFromBuffer(TaskJniUtils.loadMappedFile(context, modelPath));
   }
 
   /**
    * Creates {@link BertNLClassifier} from a {@link File} object with metadata and default {@link
    * BertNLClassifierOptions}.
    *
-   * @param modelFile The classification model {@link File} instance.
-   * @return {@link BertNLClassifier} instance.
-   * @throws IOException If model file fails to load.
+   * @param modelFile The classification model {@link File} instance
+   * @return a {@link BertNLClassifier} instance
+   * @throws IOException If model file fails to load
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static BertNLClassifier createFromFile(File modelFile) throws IOException {
     return createFromFileAndOptions(modelFile, BertNLClassifierOptions.builder().build());
@@ -110,25 +115,31 @@ public class BertNLClassifier extends BaseTaskApi {
    * BertNLClassifierOptions}.
    *
    * @param context Android context.
-   * @param pathToModel Path to the classification model.
-   * @param options to configure the classifier.
-   * @return {@link BertNLClassifier} instance.
-   * @throws IOException If model file fails to load.
+   * @param modelPath Path to the classification model
+   * @param options to configure the classifier
+   * @return a {@link BertNLClassifier} instance
+   * @throws IOException If model file fails to load
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static BertNLClassifier createFromFileAndOptions(
-      final Context context, final String pathToModel, BertNLClassifierOptions options)
+      final Context context, final String modelPath, BertNLClassifierOptions options)
       throws IOException {
-    return createFromBufferAndOptions(TaskJniUtils.loadMappedFile(context, pathToModel), options);
+    return createFromBufferAndOptions(TaskJniUtils.loadMappedFile(context, modelPath), options);
   }
 
   /**
    * Creates {@link BertNLClassifier} from a {@link File} object with metadata and {@link
    * BertNLClassifierOptions}.
    *
-   * @param modelFile The classification model {@link File} instance.
-   * @param options to configure the classifier.
-   * @return {@link BertNLClassifier} instance.
-   * @throws IOException If model file fails to load.
+   * @param modelFile The classification model {@link File} instance
+   * @param options to configure the classifier
+   * @return a {@link BertNLClassifier} instance
+   * @throws IOException If model file fails to load
+   * @throws IllegalArgumentException if an argument is invalid
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static BertNLClassifier createFromFileAndOptions(
       File modelFile, final BertNLClassifierOptions options) throws IOException {
@@ -139,7 +150,10 @@ public class BertNLClassifier extends BaseTaskApi {
               new EmptyHandleProvider() {
                 @Override
                 public long createHandle() {
-                  return initJniWithFileDescriptor(descriptor.getFd(), options);
+                  return initJniWithFileDescriptor(
+                      descriptor.getFd(),
+                      options,
+                      TaskJniUtils.createProtoBaseOptionsHandle(options.getBaseOptions()));
                 }
               },
               BERT_NL_CLASSIFIER_NATIVE_LIBNAME));
@@ -150,10 +164,12 @@ public class BertNLClassifier extends BaseTaskApi {
    * Creates {@link BertNLClassifier} with a model buffer and default {@link
    * BertNLClassifierOptions}.
    *
-   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the model.
-   * @return {@link BertNLClassifier} instance.
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the model
+   * @return a {@link BertNLClassifier} instance
    * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
-   *     {@link MappedByteBuffer}.
+   *     {@link MappedByteBuffer}
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static BertNLClassifier createFromBuffer(final ByteBuffer modelBuffer) {
     return createFromBufferAndOptions(modelBuffer, BertNLClassifierOptions.builder().build());
@@ -162,11 +178,13 @@ public class BertNLClassifier extends BaseTaskApi {
   /**
    * Creates {@link BertNLClassifier} with a model buffer and {@link BertNLClassifierOptions}.
    *
-   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the model.
-   * @param options to configure the classifier.
-   * @return {@link BertNLClassifier} instance.
+   * @param modelBuffer a direct {@link ByteBuffer} or a {@link MappedByteBuffer} of the model
+   * @param options to configure the classifier
+   * @return a {@link BertNLClassifier} instance
    * @throws IllegalArgumentException if the model buffer is not a direct {@link ByteBuffer} or a
-   *     {@link MappedByteBuffer}.
+   *     {@link MappedByteBuffer}
+   * @throws IllegalStateException if there is an internal error
+   * @throws RuntimeException if there is an otherwise unspecified error
    */
   public static BertNLClassifier createFromBufferAndOptions(
       final ByteBuffer modelBuffer, final BertNLClassifierOptions options) {
@@ -179,7 +197,10 @@ public class BertNLClassifier extends BaseTaskApi {
             new EmptyHandleProvider() {
               @Override
               public long createHandle() {
-                return initJniWithByteBuffer(modelBuffer, options);
+                return initJniWithByteBuffer(
+                    modelBuffer,
+                    options,
+                    TaskJniUtils.createProtoBaseOptionsHandle(options.getBaseOptions()));
               }
             },
             BERT_NL_CLASSIFIER_NATIVE_LIBNAME));
@@ -195,10 +216,20 @@ public class BertNLClassifier extends BaseTaskApi {
     return classifyNative(getNativeHandle(), text);
   }
 
-  private static native long initJniWithByteBuffer(
-      ByteBuffer modelBuffer, BertNLClassifierOptions options);
+  /**
+   * Constructor to initialize the JNI with a pointer from C++.
+   *
+   * @param nativeHandle a pointer referencing memory allocated in C++.
+   */
+  private BertNLClassifier(long nativeHandle) {
+    super(nativeHandle);
+  }
 
-  private static native long initJniWithFileDescriptor(int fd, BertNLClassifierOptions options);
+  private static native long initJniWithByteBuffer(
+      ByteBuffer modelBuffer, BertNLClassifierOptions options, long baseOptionsHandle);
+
+  private static native long initJniWithFileDescriptor(
+      int fd, BertNLClassifierOptions options, long baseOptionsHandle);
 
   private static native List<Category> classifyNative(long nativeHandle, String text);
 

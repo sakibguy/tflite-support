@@ -19,14 +19,15 @@ limitations under the License.
 #include <initializer_list>
 
 #include "tensorflow_lite_support/cc/port/status_macros.h"
+#include "tensorflow_lite_support/cc/port/statusor.h"
 #include "tensorflow_lite_support/cc/task/core/classification_head.h"
 #include "tensorflow_lite_support/cc/task/core/label_map_item.h"
 #include "tensorflow_lite_support/cc/task/core/score_calibration.h"
 #include "tensorflow_lite_support/cc/task/core/task_utils.h"
 #include "tensorflow_lite_support/cc/task/processor/processor.h"
-#include "tensorflow_lite_support/cc/task/processor/proto/class.proto.h"
-#include "tensorflow_lite_support/cc/task/processor/proto/classification_options.proto.h"
-#include "tensorflow_lite_support/cc/task/processor/proto/classifications.proto.h"
+#include "tensorflow_lite_support/cc/task/processor/proto/class.pb.h"
+#include "tensorflow_lite_support/cc/task/processor/proto/classification_options.pb.h"
+#include "tensorflow_lite_support/cc/task/processor/proto/classifications.pb.h"
 
 namespace tflite {
 namespace task {
@@ -46,13 +47,18 @@ namespace processor {
 //      results will be filled.
 class ClassificationPostprocessor : public Postprocessor {
  public:
-  static absl::StatusOr<std::unique_ptr<ClassificationPostprocessor>> Create(
-      core::TfLiteEngine* engine,
-      const std::initializer_list<int> output_indices,
-      std::unique_ptr<ClassificationOptions> options);
+  static tflite::support::StatusOr<std::unique_ptr<ClassificationPostprocessor>>
+  Create(core::TfLiteEngine* engine,
+         const std::initializer_list<int> output_indices,
+         std::unique_ptr<ClassificationOptions> options);
 
+  // Convert the tensor output to classification class.
+  // Note that this method doesn't add head_name for backward compatibility.
+  // Head name can be retrieved by `GetHeadName` method.
   template <typename T>
   absl::Status Postprocess(T* classifications);
+
+  const std::string GetHeadName() const { return classification_head_.name; }
 
  private:
   using Postprocessor::Postprocessor;
@@ -114,9 +120,10 @@ class ClassificationPostprocessor : public Postprocessor {
 
 template <typename T>
 absl::Status ClassificationPostprocessor::Postprocess(T* classifications) {
-  classifications->set_head_index(output_indices_.at(0));
-  std::vector<std::pair<int, float>> score_pairs;
   const auto& head = classification_head_;
+  classifications->set_head_index(output_indices_.at(0));
+
+  std::vector<std::pair<int, float>> score_pairs;
   score_pairs.reserve(head.label_map_items.size());
 
   const TfLiteTensor* output_tensor = Tensor();

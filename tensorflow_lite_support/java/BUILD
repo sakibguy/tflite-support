@@ -1,7 +1,6 @@
 # Description:
 # TensorFlow Lite Support API in Java.
 
-load("@org_tensorflow//tensorflow/java:build_defs.bzl", "JAVACOPTS")
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
 
 package(
@@ -24,7 +23,7 @@ filegroup(
 # Lite runtime (tensorflow/lite/java:tensorflowlite). If you don't want to
 # introduce the native library into dependencies, use
 # "tensorflowlite_support_java" instead, which depends on
-# tensorflow/lite/java:tensorflowlite_java.
+# tensorflow/lite/java:tensorflowlite_java_stable.
 android_library(
     name = "tensorflowlite_support",
     srcs = [],
@@ -50,7 +49,7 @@ android_library(
         "@maven//:androidx_annotation_annotation",
         "@maven//:com_google_android_odml_image",
         "@org_checkerframework_qual",
-        "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java",  # TODO(b/198734357): Use api when TF dep catches up.
+        "@org_tensorflow//tensorflow/lite/java:tensorflowlite_java_stable",  # TODO(b/198734357): Use api when TF dep catches up.
     ],
     # LINT.ThenChange(<INTERNAL>/release/build_support_api_pom.sh:dep)
 )
@@ -59,23 +58,4 @@ android_library(
 alias(
     name = "tensorflow-lite-support",
     actual = ":tensorflowlite_support",
-)
-
-java_library(
-    name = "tensorflowlite_support_precondition_lib",
-    srcs = ["src/java/org/tensorflow/lite/support/common/SupportPreconditions.java"],
-    javacopts = JAVACOPTS,
-    deps = [
-        "@org_checkerframework_qual",
-    ],
-)
-
-android_library(
-    name = "tensorflowlite_support_precondition",
-    srcs = ["src/java/org/tensorflow/lite/support/common/SupportPreconditions.java"],
-    javacopts = ["-source 7 -target 7"],
-    manifest = "AndroidManifest.xml",
-    deps = [
-        "@org_checkerframework_qual",
-    ],
 )

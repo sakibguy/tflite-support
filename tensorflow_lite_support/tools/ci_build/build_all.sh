@@ -39,6 +39,8 @@ bazel build -c opt ${BAZEL_PARALLEL} --config=monolithic \
     --config=android_arm64 --fat_apk_cpu=x86,x86_64,arm64-v8a,armeabi-v7a \
     //tensorflow_lite_support/java:tensorflowlite_support \
     //tensorflow_lite_support/cc/task/vision:image_embedder \
+    //tensorflow_lite_support/cc/task/audio:audio_embedder \
+    //tensorflow_lite_support/cc/task/processor:all \
     //tensorflow_lite_support/odml/java/image \
     //tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/core:base-task-api.aar \
     //tensorflow_lite_support/java/src/java/org/tensorflow/lite/task/text:task-library-text \
@@ -55,13 +57,15 @@ bazel build -c opt ${BAZEL_PARALLEL} --define=darwinn_portable=1 \
 
 bazel clean
 
-bazel test $BAZEL_PARALLEL --test_output=all \
+bazel test -c opt $BAZEL_PARALLEL --test_output=all \
+    //tensorflow_lite_support/c/test/... \
     //tensorflow_lite_support/cc/test/task/vision:all \
+    //tensorflow_lite_support/cc/test/task/text/... \
     //tensorflow_lite_support/custom_ops/kernel/sentencepiece:all \
     //tensorflow_lite_support/metadata/python/tests:metadata_test \
     //tensorflow_lite_support/metadata/python/tests/metadata_writers:all \
 
-bazel test $BAZEL_PARALLEL --test_output=all --build_tests_only \
+bazel test -c opt $BAZEL_PARALLEL --test_output=all --build_tests_only \
     --build_tag_filters=-tflite_emulator_test_android \
     --test_tag_filters=-tflite_emulator_test_android \
     //tensorflow_lite_support/java/src/javatests/org/tensorflow/lite/support/...
